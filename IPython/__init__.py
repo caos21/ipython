@@ -2,7 +2,7 @@
 """
 IPython: tools for interactive and parallel computing in Python.
 
-http://ipython.org
+https://ipython.org
 """
 #-----------------------------------------------------------------------------
 #  Copyright (c) 2008-2011, IPython Development Team.
@@ -18,21 +18,28 @@ http://ipython.org
 #-----------------------------------------------------------------------------
 # Imports
 #-----------------------------------------------------------------------------
-from __future__ import absolute_import
 
 import os
 import sys
-import warnings
 
 #-----------------------------------------------------------------------------
 # Setup everything
 #-----------------------------------------------------------------------------
 
 # Don't forget to also update setup.py when this changes!
-v = sys.version_info
-if v[:2] < (2,7) or (v[0] >= 3 and v[:2] < (3,3)):
-    raise ImportError('IPython requires Python version 2.7 or 3.3 or above.')
-del v
+if sys.version_info < (3, 6):
+    raise ImportError(
+"""
+IPython 7.10+ supports Python 3.6 and above.
+When using Python 2.7, please install IPython 5.x LTS Long Term Support version.
+Python 3.3 and 3.4 were supported up to IPython 6.x.
+Python 3.5 was supported with IPython 7.0 to 7.9.
+
+See IPython `README.rst` file for more information:
+
+    https://github.com/ipython/ipython/blob/master/README.rst
+
+""")
 
 # Make it easy to import extensions - they are always directly on pythonpath.
 # Therefore, non-IPython modules can be added to extensions directory.
@@ -69,7 +76,7 @@ def embed_kernel(module=None, local_ns=None, **kwargs):
     
     Parameters
     ----------
-    module : ModuleType, optional
+    module : types.ModuleType, optional
         The module to load into IPython globals (default: caller)
     local_ns : dict, optional
         The namespace to load into IPython user namespace (default: caller)
@@ -143,15 +150,3 @@ def start_kernel(argv=None, **kwargs):
     """
     from IPython.kernel.zmq.kernelapp import launch_new_instance
     return launch_new_instance(argv=argv, **kwargs)
-    
-# deprecated shim for IPython.Config
-import traitlets.config
-class Config(traitlets.config.Config):
-    def __init__(self, *args, **kwargs):
-        warnings.warn(
-            "IPython.Config is deprecated and will be removed in IPython 5."
-            " Use traitlets.config.Config.",
-            DeprecationWarning, stacklevel=2,
-        )
-        super(Config, self).__init__(*args, **kwargs)
-

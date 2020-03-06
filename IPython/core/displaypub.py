@@ -15,10 +15,10 @@ spec.
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-from __future__ import print_function
+
+import sys
 
 from traitlets.config.configurable import Configurable
-from IPython.utils import io
 from traitlets import List
 
 # This used to be defined here - it is imported for backwards compatibility
@@ -28,12 +28,17 @@ from .display import publish_display_data
 # Main payload class
 #-----------------------------------------------------------------------------
 
+
 class DisplayPublisher(Configurable):
     """A traited class that publishes display data to frontends.
 
     Instances of this class are created by the main IPython object and should
     be accessed there.
     """
+
+    def __init__(self, shell=None, *args, **kwargs):
+        self.shell = shell
+        super().__init__(*args, **kwargs)
 
     def _validate_data(self, data, metadata=None):
         """Validate the display data.
@@ -52,7 +57,8 @@ class DisplayPublisher(Configurable):
             if not isinstance(metadata, dict):
                 raise TypeError('metadata must be a dict, got: %r' % data)
 
-    def publish(self, data, metadata=None, source=None):
+    # use * to indicate transient, update are keyword-only
+    def publish(self, data, metadata=None, source=None, *, transient=None, update=False, **kwargs) -> None:
         """Publish data and metadata to all frontends.
 
         See the ``display_data`` message in the messaging documentation for
@@ -88,29 +94,45 @@ class DisplayPublisher(Configurable):
             the data itself.
         source : str, deprecated
             Unused.
+        transient: dict, keyword-only
+            A dictionary for transient data.
+            Data in this dictionary should not be persisted as part of saving this output.
+            Examples include 'display_id'.
+        update: bool, keyword-only, default: False
+            If True, only update existing outputs with the same display_id,
+            rather than creating a new output.
         """
 
-        # The default is to simply write the plain text data using io.stdout.
+        handlers = {}
+        if self.shell is not None:
+            handlers = getattr(self.shell, 'mime_renderers', {})
+
+        for mime, handler in handlers.items():
+            if mime in data:
+                handler(data[mime], metadata.get(mime, None))
+                return
+
         if 'text/plain' in data:
-            print(data['text/plain'], file=io.stdout)
+            print(data['text/plain'])
 
     def clear_output(self, wait=False):
         """Clear the output of the cell receiving output."""
-        print('\033[2K\r', file=io.stdout, end='')
-        io.stdout.flush()
-        print('\033[2K\r', file=io.stderr, end='')
-        io.stderr.flush()
+        print('\033[2K\r', end='')
+        sys.stdout.flush()
+        print('\033[2K\r', end='')
+        sys.stderr.flush()
 
 
 class CapturingDisplayPublisher(DisplayPublisher):
     """A DisplayPublisher that stores"""
     outputs = List()
 
-    def publish(self, data, metadata=None, source=None):
-        self.outputs.append((data, metadata))
-    
+    def publish(self, data, metadata=None, source=None, *, transient=None, update=False):
+        self.outputs.append({'data':data, 'metadata':metadata,
+                             'transient':transient, 'update':update})
+
     def clear_output(self, wait=False):
         super(CapturingDisplayPublisher, self).clear_output(wait)
-        
+
         # empty the list, *do not* reassign a new list
-        del self.outputs[:]
+        self.outputs.clear()

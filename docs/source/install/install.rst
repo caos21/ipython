@@ -1,67 +1,75 @@
-IPython requires Python 2.7 or ≥ 3.3.
+.. _install:
 
-.. seealso::
-
-   `Installing Jupyter <http://jupyter.readthedocs.org/en/latest/install.html>`__
-     The Notebook, nbconvert, and many other former pieces of IPython are now
-     part of Project Jupyter.
+Installing IPython
+==================
 
 
-Quickstart
-==========
+IPython 6 requires Python ≥ 3.3. IPython 5.x can be installed on Python 2.
 
-If you have :mod:`pip`,
-the quickest way to get up and running with IPython is:
+
+Quick Install 
+-------------
+
+With ``pip`` already installed :
 
 .. code-block:: bash
 
     $ pip install ipython
 
-To use IPython with notebooks or the Qt console, you should also install
-``jupyter``.
+This installs IPython as well as its dependencies.
 
-To run IPython's test suite, use the :command:`iptest` command:
+If you want to use IPython with notebooks or the Qt console, you should also
+install Jupyter ``pip install jupyter``.
 
-.. code-block:: bash
-
-    $ iptest
 
 
 Overview
-========
+--------
 
-This document describes in detail the steps required to install IPython.
-For a few quick ways to get started with package managers or full Python distributions,
-see `the install page <http://ipython.org/install.html>`_ of the IPython website.
+This document describes in detail the steps required to install IPython. For a
+few quick ways to get started with package managers or full Python
+distributions, see `the install page <https://ipython.org/install.html>`_ of the
+IPython website.
 
-Please let us know if you have problems installing IPython or any of its dependencies.
+Please let us know if you have problems installing IPython or any of its
+dependencies.
 
-IPython and most dependencies can be installed via :command:`pip`.
+IPython and most dependencies should be installed via :command:`pip`.
 In many scenarios, this is the simplest method of installing Python packages.
 More information about :mod:`pip` can be found on
-`its PyPI page <http://pypi.python.org/pypi/pip>`__.
+`its PyPI page <https://pip.pypa.io>`__.
 
 
 More general information about installing Python packages can be found in
 `Python's documentation <http://docs.python.org>`_.
 
+.. _dependencies:
+
+Dependencies
+~~~~~~~~~~~~
+
+IPython relies on a number of other Python packages. Installing using a package
+manager like pip or conda will ensure the necessary packages are installed.
+Manual installation without dependencies is possible, but not recommended.
+The dependencies can be viewed with package manager commands,
+such as :command:`pip show ipython` or :command:`conda info ipython`.
+
 
 Installing IPython itself
-=========================
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Given a properly built Python, the basic interactive IPython shell will work
-with no external dependencies.  However, some Python distributions
-(particularly on Windows and OS X), don't come with a working :mod:`readline`
-module.  The IPython shell will work without :mod:`readline`, but will lack
-many features that users depend on, such as tab completion and command line
-editing.  If you install IPython with :mod:`pip`,
-then the appropriate :mod:`readline` for your platform will be installed.
-See below for details of how to make sure you have a working :mod:`readline`.
+IPython requires several dependencies to work correctly, it is not recommended
+to install IPython and all its dependencies manually as this can be quite long
+and troublesome. You should use the python package manager ``pip``.
 
 Installation using pip
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 
-If you have :mod:`pip`, the easiest way of getting IPython is:
+Make sure you have the latest version of :mod:`pip` (the Python package
+manager) installed. If you do not, head to `Pip documentation
+<https://pip.pypa.io/en/stable/installing/>`_ and install :mod:`pip` first.
+
+The quickest way to get up and running with IPython is to install it with pip:
 
 .. code-block:: bash
 
@@ -71,44 +79,55 @@ That's it.
 
 
 Installation from source
-------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~
 
-If you don't want to use :command:`pip`, or don't have it installed,
+To install IPython from source,
 grab the latest stable tarball of IPython `from PyPI
 <https://pypi.python.org/pypi/ipython>`__.  Then do the following:
 
 .. code-block:: bash
 
-    $ tar -xzf ipython.tar.gz
-    $ cd ipython
-    $ python setup.py install
+    tar -xzf ipython-5.1.0.tar.gz
+    cd ipython-5.1.0
+    # The [test] extra ensures test dependencies are installed too:
+    pip install .[test]
+
+Do not invoke ``setup.py`` directly as this can have undesirable consequences
+for further upgrades. We do not recommend using ``easy_install`` either.
 
 If you are installing to a location (like ``/usr/local``) that requires higher
-permissions, you may need to run the last command with :command:`sudo`.
+permissions, you may need to run the last command with :command:`sudo`. You can
+also install in user specific location by using the ``--user`` flag in
+conjunction with pip.
 
+To run IPython's test suite, use the :command:`iptest` command from outside of
+the IPython source tree:
+
+.. code-block:: bash
+
+    $ iptest
+
+.. _devinstall:
 
 Installing the development version
-----------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 It is also possible to install the development version of IPython from our
 `Git <http://git-scm.com/>`_ source code repository.  To do this you will
-need to have Git installed on your system.  Then do:
+need to have Git installed on your system.  
+
+
+Then do:
 
 .. code-block:: bash
 
-    $ git clone --recursive https://github.com/ipython/ipython.git
+    $ git clone https://github.com/ipython/ipython.git
     $ cd ipython
-    $ python setup.py install
+    $ pip install -e .[test]
 
-Some users want to be able to follow the development branch as it changes.  If
-you have :mod:`pip`, you can replace the last step by:
-
-.. code-block:: bash
-
-    $ pip install -e .
-
-This creates links in the right places and installs the command line script to
-the appropriate places. 
+The :command:`pip install -e .` command allows users and developers to follow
+the development branch as it changes by creating links in the right places and
+installing the command line scripts to the appropriate locations.
 
 Then, if you want to update your IPython at any time, do:
 
@@ -116,65 +135,10 @@ Then, if you want to update your IPython at any time, do:
 
     $ git pull
 
-.. _dependencies:
-
-Dependencies
-============
-
-IPython relies on a number of other Python packages. Installing using a package
-manager like pip or conda will ensure the necessary packages are installed. If
-you install manually, it's up to you to make sure dependencies are installed.
-They're not listed here, because they may change from release to release, so a
-static list will inevitably get out of date.
-
-It also has one key non-Python dependency which you may need to install separately.
-
-readline
---------
-
-IPython's terminal interface relies on readline to provide features like tab
-completion and history navigation. If you only want to use IPython as a kernel
-for Jupyter notebooks and other frontends, you don't need readline.
-
-
-**On Windows**, to get full console functionality, *PyReadline* is required.
-PyReadline is a separate, Windows only implementation of readline that uses
-native Windows calls through :mod:`ctypes`. The easiest way of installing
-PyReadline is you use the binary installer available `here
-<http://pypi.python.org/pypi/pyreadline>`__.
-
-**On OS X**, if you are using the built-in Python shipped by Apple, you will be
-missing a proper readline implementation as Apple ships instead a library called
-``libedit`` that provides only some of readline's functionality.  While you may
-find libedit sufficient, we have occasional reports of bugs with it and several
-developers who use OS X as their main environment consider libedit unacceptable
-for productive, regular use with IPython.
-
-Therefore, IPython on OS X depends on the :mod:`gnureadline` module.
-We will *not* consider completion/history problems to be bugs for IPython if you
-are using libedit.
-
-To get a working :mod:`readline` module on OS X, do (with :mod:`pip`
-installed):
+If the dependencies or entrypoints have changed, you may have to run
 
 .. code-block:: bash
 
-    $ pip install gnureadline
+    $ pip install -e .
 
-.. note::
-
-    Other Python distributions on OS X (such as Anaconda, fink, MacPorts)
-    already have proper readline so you likely don't have to do this step.
-
-When IPython is installed with :mod:`pip`,
-the correct readline should be installed if you specify the `terminal`
-optional dependencies:
-
-.. code-block:: bash
-
-    $ pip install "ipython[terminal]"
-
-**On Linux**, readline is normally installed by default. If not, install it
-from your system package manager. If you are compiling your own Python, make
-sure you install the readline development headers first.
-
+again, but this is infrequent.

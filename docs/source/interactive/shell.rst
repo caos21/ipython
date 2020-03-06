@@ -63,23 +63,8 @@ switching to any of them. Type ``cd?`` for more details.
 Prompt customization
 ====================
 
-Here are some prompt configurations you can try out interactively by using the
-``%config`` magic::
-    
-    %config PromptManager.in_template = r'{color.LightGreen}\u@\h{color.LightBlue}[{color.LightCyan}\Y1{color.LightBlue}]{color.Green}|\#> '
-    %config PromptManager.in2_template = r'{color.Green}|{color.LightGreen}\D{color.Green}> '
-    %config PromptManager.out_template = r'<\#> '
+See :ref:`custom_prompts`.
 
-
-You can change the prompt configuration to your liking permanently by editing
-``ipython_config.py``::
-    
-    c.PromptManager.in_template = r'{color.LightGreen}\u@\h{color.LightBlue}[{color.LightCyan}\Y1{color.LightBlue}]{color.Green}|\#> '
-    c.PromptManager.in2_template = r'{color.Green}|{color.LightGreen}\D{color.Green}> '
-    c.PromptManager.out_template = r'<\#> '
-
-Read more about the :ref:`configuration system <config_overview>` for details
-on how to find ``ipython_config.py``.
 
 .. _string_lists:
 
@@ -199,15 +184,15 @@ First, capture output of "hg status"::
     11: build\bdist.win32\winexe\temp\_hashlib.py
     12: build\bdist.win32\winexe\temp\_socket.py
 
-Now we can just remove these files by doing 'rm $junk.s'. 
+Now we can just remove these files by doing 'rm $junk.s'.
 
-The .s, .n, .p properties
+The .n, .s, .p properties
 -------------------------
 
-The ``.s`` property returns one string where lines are separated by
-single space (for convenient passing to system commands). The ``.n``
-property return one string where the lines are separated by a newline
-(i.e. the original output of the function). If the items in string
-list are file names, ``.p`` can be used to get a list of "path" objects
-for convenient file manipulation.
+Properties of `SList <https://ipython.readthedocs.io/en/stable/api/generated/IPython.utils.text.html?highlight=SList#IPython.utils.text.SList>`_ wrapper
+provide a convenient ways to use contained text in different formats:
 
+* ``.n`` returns (original) string with lines separated by a newline
+* ``.s`` returns string with lines separated by single space (for
+  convenient passing to system commands)
+* ``.p`` returns list of "path" objects from detected file names

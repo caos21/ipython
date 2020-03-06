@@ -84,12 +84,17 @@ IPython object:
 
 
     # In order to actually use these magics, you must register them with a
-    # running IPython.  This code must be placed in a file that is loaded once
-    # IPython is up and running:
-    ip = get_ipython()
-    # You can register the class itself without instantiating it.  IPython will
-    # call the default constructor on it.
-    ip.register_magics(MyMagics)
+    # running IPython.
+
+    def load_ipython_extension(ipython):
+        """
+        Any module file that define a function named `load_ipython_extension`
+        can be loaded via `%load_ext module.path` or be configured to be
+        autoloaded by IPython at startup time.
+        """
+        # You can register the class itself without instantiating it.  IPython will
+        # call the default constructor on it.
+        ipython.register_magics(MyMagics)
 
 If you want to create a class with a different constructor that holds
 additional state, then you should always call the parent constructor and
@@ -108,26 +113,79 @@ instantiate the class yourself before registration:
         
         # etc...
 
-    # This class must then be registered with a manually created instance,
-    # since its constructor has different arguments from the default:
-    ip = get_ipython()
-    magics = StatefulMagics(ip, some_data)
-    ip.register_magics(magics)
-    
+    def load_ipython_extension(ipython):
+        """
+        Any module file that define a function named `load_ipython_extension`
+        can be loaded via `%load_ext module.path` or be configured to be
+        autoloaded by IPython at startup time.
+        """
+        # This class must then be registered with a manually created instance,
+        # since its constructor has different arguments from the default:
+        magics = StatefulMagics(ipython, some_data)
+        ipython.register_magics(magics)
 
-In earlier versions, IPython had an API for the creation of line magics (cell
-magics did not exist at the time) that required you to create functions with a
-method-looking signature and to manually pass both the function and the name.
-While this API is no longer recommended, it remains indefinitely supported for
-backwards compatibility purposes.  With the old API, you'd create a magic as
-follows:
 
-.. sourcecode:: python
+.. note::
 
-    def func(self, line):
-        print("Line magic called with line:", line)
-        print("IPython object:", self.shell)
+   In early IPython versions 0.12 and before the line magics were
+   created using a :func:`define_magic` API function.  This API has been
+   replaced with the above in IPython 0.13 and then completely removed
+   in IPython 5.  Maintainers of IPython extensions that still use the
+   :func:`define_magic` function are advised to adjust their code
+   for the current API.
 
-    ip = get_ipython()
-    # Declare this function as the magic %mycommand
-    ip.define_magic('mycommand', func)
+
+Accessing user namespace and local scope
+========================================
+
+When creating line magics, you may need to access surrounding scope  to get user
+variables (e.g when called inside functions). IPython provide the
+``@needs_local_scope`` decorator that can be imported from
+``IPython.core.magics``. When decorated with ``@needs_local_scope`` a magic will
+be passed ``local_ns`` as an argument. As a convenience ``@needs_local_scope``
+can also be applied to cell magics even if cell magics cannot appear at local
+scope context.
+
+Complete Example
+================
+
+Here is a full example of a magic package. You can distribute magics using
+setuptools, distutils, or any other distribution tools like `flit
+<http://flit.readthedocs.io>`_ for pure Python packages.
+
+
+.. sourcecode:: bash
+
+   .
+   ├── example_magic
+   │   ├── __init__.py
+   │   └── abracadabra.py
+   └── setup.py
+
+.. sourcecode:: bash
+
+   $ cat example_magic/__init__.py
+   """An example magic"""
+   __version__ = '0.0.1'
+   
+   from .abracadabra import Abracadabra
+   
+   def load_ipython_extension(ipython):
+       ipython.register_magics(Abracadabra)
+
+.. sourcecode:: bash
+
+    $ cat example_magic/abracadabra.py
+    from IPython.core.magic import (Magics, magics_class, line_magic, cell_magic)
+
+    @magics_class
+    class Abracadabra(Magics):
+
+        @line_magic
+        def abra(self, line):
+            return line
+
+        @cell_magic
+        def cadabra(self, line, cell):
+            return line, cell
+

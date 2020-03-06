@@ -19,22 +19,19 @@ name = 'ipython'
 # IPython version information.  An empty _version_extra corresponds to a full
 # release.  'dev' as a _version_extra string means this is a development
 # version
-_version_major = 4
-_version_minor = 1
+_version_major = 8
+_version_minor = 0
 _version_patch = 0
-_version_extra = 'dev'
-# _version_extra = 'rc1'
+_version_extra = '.dev'
+# _version_extra = 'b1'
 # _version_extra = ''  # Uncomment this for full releases
-
-# release.codename is deprecated in 2.0, will be removed in 3.0
-codename = ''
 
 # Construct full version string from these.
 _ver = [_version_major, _version_minor, _version_patch]
 
 __version__ = '.'.join(map(str, _ver))
 if _version_extra:
-    __version__ = __version__ + '-' + _version_extra
+    __version__ = __version__  + _version_extra
 
 version = __version__  # backwards compatibility name
 version_info = (_version_major, _version_minor, _version_patch, _version_extra)
@@ -51,7 +48,7 @@ IPython provides a rich toolkit to help you make the most out of using Python
 interactively.  Its main components are:
 
 * A powerful interactive Python shell
-* A `Jupyter <http://jupyter.org/>`_ kernel to work with Python code in Jupyter
+* A `Jupyter <https://jupyter.org/>`_ kernel to work with Python code in Jupyter
   notebooks and other interactive frontends.
 
 The enhanced interactive Python shells have the following main features:
@@ -101,16 +98,14 @@ authors = {'Fernando' : ('Fernando Perez','fperez.net@gmail.com'),
 
 author = 'The IPython Development Team'
 
-author_email = 'ipython-dev@scipy.org'
+author_email = 'ipython-dev@python.org'
 
-url = 'http://ipython.org'
+url = 'https://ipython.org'
 
-download_url = 'https://github.com/ipython/ipython/downloads'
 
-platforms = ['Linux','Mac OSX','Windows XP/Vista/7/8']
+platforms = ['Linux','Mac OSX','Windows']
 
-keywords = ['Interactive','Interpreter','Shell','Parallel','Distributed',
-            'Web-based computing', 'Qt console', 'Embedding']
+keywords = ['Interactive','Interpreter','Shell', 'Embedding']
 
 classifiers = [
     'Framework :: IPython',
@@ -118,8 +113,7 @@ classifiers = [
     'Intended Audience :: Science/Research',
     'License :: OSI Approved :: BSD License',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3 :: Only',
     'Topic :: System :: Shells'
     ]

@@ -1,6 +1,5 @@
 """Implementation of namespace-related magic functions.
 """
-from __future__ import print_function
 #-----------------------------------------------------------------------------
 #  Copyright (c) 2012 The IPython Development Team.
 #
@@ -26,7 +25,6 @@ from IPython.testing.skipdoctest import skip_doctest
 from IPython.utils.encoding import DEFAULT_ENCODING
 from IPython.utils.openpy import read_py_file
 from IPython.utils.path import get_py_filename
-from IPython.utils.py3compat import unicode_type
 
 #-----------------------------------------------------------------------------
 # Magic implementation classes
@@ -51,7 +49,7 @@ class NamespaceMagics(Magics):
         # We need to detect if we got called as 'pinfo pinfo foo', which can
         # happen if the user types 'pinfo foo?' at the cmd line.
         pinfo,qmark1,oname,qmark2 = \
-               re.match('(pinfo )?(\?*)(.*?)(\??$)',parameter_s).groups()
+               re.match(r'(pinfo )?(\?*)(.*?)(\??$)',parameter_s).groups()
         if pinfo or qmark1 or qmark2:
             detail_level = 1
         if "*" in oname:
@@ -175,6 +173,9 @@ class NamespaceMagics(Magics):
           'builtin', 'user', 'user_global','internal', 'alias', where
           'builtin' and 'user' are the search defaults.  Note that you should
           not use quotes when specifying namespaces.
+          
+          -l: List all available object types for object matching. This function
+          can be used without arguments.
 
           'Builtin' contains the python module builtin, 'user' contains all
           user data, 'alias' only contain the shell aliases and no python
@@ -202,6 +203,10 @@ class NamespaceMagics(Magics):
         Show objects beginning with a single _::
 
           %psearch -a _*         list objects beginning with a single underscore
+          
+        List available objects::
+        
+          %psearch -l            list all available object types
         """
         try:
             parameter_s.encode('ascii')
@@ -213,10 +218,15 @@ class NamespaceMagics(Magics):
         def_search = ['user_local', 'user_global', 'builtin']
 
         # Process options/args
-        opts,args = self.parse_options(parameter_s,'cias:e:',list_all=True)
+        opts,args = self.parse_options(parameter_s,'cias:e:l',list_all=True)
         opt = opts.get
         shell = self.shell
         psearch = shell.inspector.psearch
+        
+        # select list object types
+        list_types = False
+        if 'l' in opts:
+            list_types = True
 
         # select case options
         if 'i' in opts:
@@ -234,7 +244,7 @@ class NamespaceMagics(Magics):
         # Call the actual search
         try:
             psearch(args,shell.ns_table,ns_search,
-                    show_all=opt('a'),ignore_case=ignore_case)
+                    show_all=opt('a'),ignore_case=ignore_case, list_types=list_types)
         except:
             shell.showtraceback()
 
@@ -461,8 +471,8 @@ class NamespaceMagics(Magics):
                 try:
                     vstr = str(var)
                 except UnicodeEncodeError:
-                    vstr = unicode_type(var).encode(DEFAULT_ENCODING,
-                                               'backslashreplace')
+                    vstr = var.encode(DEFAULT_ENCODING,
+                                      'backslashreplace')
                 except:
                     vstr = "<object with id %d (str() failed)>" % id(var)
                 vstr = vstr.replace('\n', '\\n')
@@ -508,12 +518,12 @@ class NamespaceMagics(Magics):
           In [7]: a
           Out[7]: 1
 
-          In [8]: 'a' in _ip.user_ns
+          In [8]: 'a' in get_ipython().user_ns
           Out[8]: True
 
           In [9]: %reset -f
 
-          In [1]: 'a' in _ip.user_ns
+          In [1]: 'a' in get_ipython().user_ns
           Out[1]: False
 
           In [2]: %reset -f in

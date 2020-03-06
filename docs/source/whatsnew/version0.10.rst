@@ -34,7 +34,7 @@ Highlights of this release:
   (such as a linux text console without X11).
   
 For this release we merged 24 commits, contributed by the following people
-(please let us know if we ommitted your name and we'll gladly fix this in the
+(please let us know if we omitted your name and we'll gladly fix this in the
 notes for the future):
 
 * Fernando Perez
@@ -77,7 +77,7 @@ Highlights of this release:
   in remote tasks, as well as providing better control for remote task IDs.
 
 - New IPython Sphinx directive contributed by John Hunter.  You can use this
-  directive to mark blocks in reSructuredText documents as containing IPython
+  directive to mark blocks in reStructuredText documents as containing IPython
   syntax (including figures) and the will be executed during the build:
 
   .. sourcecode:: ipython

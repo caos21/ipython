@@ -12,11 +12,12 @@
 #-----------------------------------------------------------------------------
 
 import os
+import subprocess
 import sys
 import nose.tools as nt
-from IPython.utils.process import process_handler
 from IPython.utils.tempdir import NamedFileInTemporaryDirectory
 from IPython.testing.decorators import skip_win32
+from IPython.testing import IPYTHON_TESTING_TIMEOUT_SCALE
 
 #-----------------------------------------------------------------------------
 # Tests
@@ -24,7 +25,6 @@ from IPython.testing.decorators import skip_win32
 
 
 _sample_embed = b"""
-from __future__ import print_function
 import IPython
 
 a = 3
@@ -47,9 +47,14 @@ def test_ipython_embed():
 
         # run `python file_with_embed.py`
         cmd = [sys.executable, f.name]
+        env = os.environ.copy()
+        env['IPY_TEST_SIMPLE_PROMPT'] = '1'
 
-        out, p = process_handler(cmd, lambda p: (p.communicate(_exit), p))
-        std = out[0].decode('UTF-8')
+        p = subprocess.Popen(cmd, env=env, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = p.communicate(_exit)
+        std = out.decode('UTF-8')
+
         nt.assert_equal(p.returncode, 0)
         nt.assert_in('3 . 14', std)
         if os.name != 'nt':
@@ -62,11 +67,13 @@ def test_nest_embed():
     """test that `IPython.embed()` is nestable"""
     import pexpect
     ipy_prompt = r']:' #ansi color codes give problems matching beyond this
+    env = os.environ.copy()
+    env['IPY_TEST_SIMPLE_PROMPT'] = '1'
 
 
-    child = pexpect.spawn('%s -m IPython'%(sys.executable, ))
-    child.expect(ipy_prompt)
-    child.sendline("from __future__ import print_function")
+    child = pexpect.spawn(sys.executable, ['-m', 'IPython', '--colors=nocolor'],
+                          env=env)
+    child.timeout = 5 * IPYTHON_TESTING_TIMEOUT_SCALE
     child.expect(ipy_prompt)
     child.sendline("import IPython")
     child.expect(ipy_prompt)
@@ -81,7 +88,8 @@ def test_nest_embed():
     except pexpect.TIMEOUT as e:
         print(e)
         #child.interact()
-    child.sendline("embed1 = get_ipython()"); child.expect(ipy_prompt)
+    child.sendline("embed1 = get_ipython()")
+    child.expect(ipy_prompt)
     child.sendline("print('true' if embed1 is not ip0 else 'false')")
     assert(child.expect(['true\r\n', 'false\r\n']) == 0)
     child.expect(ipy_prompt)
@@ -98,7 +106,8 @@ def test_nest_embed():
     except pexpect.TIMEOUT as e:
         print(e)
         #child.interact()
-    child.sendline("embed2 = get_ipython()"); child.expect(ipy_prompt)
+    child.sendline("embed2 = get_ipython()")
+    child.expect(ipy_prompt)
     child.sendline("print('true' if embed2 is not embed1 else 'false')")
     assert(child.expect(['true\r\n', 'false\r\n']) == 0)
     child.expect(ipy_prompt)
@@ -123,3 +132,5 @@ def test_nest_embed():
     child.sendline("print('true' if IPython.get_ipython() is ip0 else 'false')")
     assert(child.expect(['true\r\n', 'false\r\n']) == 0)
     child.expect(ipy_prompt)
+    child.sendline('exit')
+    child.close()

@@ -1,6 +1,5 @@
 """Various utilities common to IPython release and maintenance tools.
 """
-from __future__ import print_function
 
 # Library imports
 import os
@@ -19,9 +18,10 @@ archive = '%s:%s' % (archive_user, archive_dir)
 
 # Build commands
 # Source dists
-sdists = './setup.py sdist --formats=gztar,zip'
+sdists = './setup.py sdist --formats=gztar'
 # Binary dists
-wheels = './setupegg.py bdist_wheel'
+def buildwheels():
+    sh('{python} setupegg.py bdist_wheel'.format(python=sys.executable))
 
 # Utility functions
 def sh(cmd):
@@ -31,9 +31,6 @@ def sh(cmd):
     #stat = 0  # Uncomment this and comment previous to run in debug mode
     if stat:
         raise SystemExit("Command %s failed with code: %s" % (cmd, stat))
-
-# Backwards compatibility
-c = sh
 
 def get_ipdir():
     """Get IPython directory from command line, or assume it's the one above."""
@@ -48,18 +45,6 @@ def get_ipdir():
         raise SystemExit('Invalid ipython directory: %s' % ipdir)
     return ipdir
 
-
-def compile_tree():
-    """Compile all Python files below current directory."""
-    stat = os.system('python -m compileall .')
-    if stat:
-        msg = '*** ERROR: Some Python files in tree do NOT compile! ***\n'
-        msg += 'See messages above for the actual file that produced it.\n'
-        raise SystemExit(msg)
-
-try:
-    execfile
-except NameError:
-    def execfile(fname, globs, locs=None):
-        locs = locs or globs
-        exec(compile(open(fname).read(), fname, "exec"), globs, locs)
+def execfile(fname, globs, locs=None):
+    locs = locs or globs
+    exec(compile(open(fname).read(), fname, "exec"), globs, locs)

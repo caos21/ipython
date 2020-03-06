@@ -11,7 +11,8 @@ Upgrading Notebooks
    "Widget" suffix was removed from the end of the class name. i.e.
    ``ButtonWidget`` is now ``Button``.
 3. ``ContainerWidget`` was renamed to ``Box``.
-4. ``PopupWidget`` was removed from IPython. If you use the
+4. ``PopupWidget`` was removed from IPython, because bootstrapjs was 
+   problematic (creates global variables, etc.). If you use the
    ``PopupWidget``, try using a ``Box`` widget instead. If your notebook
    can't live without the popup functionality, subclass the ``Box``
    widget (both in Python and JS) and use JQuery UI's ``draggable()``
@@ -189,7 +190,7 @@ Smaller Changes
    (`#6990 <https://github.com/ipython/ipython/pull/6990>`__).
 -  A warning was added that shows on widget import because it's expected
    that the API will change again by IPython 4.0. This warning can be
-   supressed (`#7107 <https://github.com/ipython/ipython/pull/7107>`__,
+   suppressed (`#7107 <https://github.com/ipython/ipython/pull/7107>`__,
    `#7200 <https://github.com/ipython/ipython/pull/7200>`__,
    `#7201 <https://github.com/ipython/ipython/pull/7201>`__,
    `#7204 <https://github.com/ipython/ipython/pull/7204>`__).

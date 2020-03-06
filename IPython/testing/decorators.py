@@ -31,11 +31,13 @@ we've copied verbatim from numpy.
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-import sys
 import os
+import shutil
+import sys
 import tempfile
 import unittest
 import warnings
+from importlib import import_module
 
 from decorator import decorator
 
@@ -45,10 +47,7 @@ from .ipunittest import ipdoctest, ipdocstring
 # Grab the numpy-specific decorators which we keep in a file that we
 # occasionally update from upstream: decorators.py is a copy of
 # numpy.testing.decorators, we expose all of it here.
-from IPython.external.decorators import *
-
-# For onlyif_cmd_exists decorator
-from IPython.utils.py3compat import string_types, which, PY2, PY3
+from IPython.external.decorators import knownfailureif
 
 #-----------------------------------------------------------------------------
 # Classes and functions
@@ -67,7 +66,7 @@ def as_unittest(func):
 
 # Utility functions
 
-def apply_wrapper(wrapper,func):
+def apply_wrapper(wrapper, func):
     """Apply a wrapper to a function for decoration.
 
     This mixes Michele Simionato's decorator tool with nose's make_decorator,
@@ -76,14 +75,14 @@ def apply_wrapper(wrapper,func):
     This will ensure that wrapped functions can still be well introspected via
     IPython, for example.
     """
-    warnings.warn("The function `apply_wrapper` is deprecated and might be removed in IPython 5.0", DeprecationWarning)
-
+    warnings.warn("The function `apply_wrapper` is deprecated since IPython 4.0",
+            DeprecationWarning, stacklevel=2)
     import nose.tools
 
     return decorator(wrapper,nose.tools.make_decorator(func)(wrapper))
 
 
-def make_label_dec(label,ds=None):
+def make_label_dec(label, ds=None):
     """Factory function to create a decorator that applies one or more labels.
 
     Parameters
@@ -109,9 +108,9 @@ def make_label_dec(label,ds=None):
     >>> slow = make_label_dec('slow')
     >>> slow.__doc__
     "Labels a test as 'slow'."
-    
+
     And one that uses multiple labels and a custom docstring:
-    
+
     >>> rare = make_label_dec(['slow','hard'],
     ... "Mix labels 'slow' and 'hard' for rare tests.")
     >>> rare.__doc__
@@ -128,8 +127,9 @@ def make_label_dec(label,ds=None):
     True
     """
 
-    warnings.warn("The function `make_label_dec` is deprecated and might be removed in IPython 5.0", DeprecationWarning)
-    if isinstance(label, string_types):
+    warnings.warn("The function `make_label_dec` is deprecated since IPython 4.0",
+            DeprecationWarning, stacklevel=2)
+    if isinstance(label, str):
         labels = [label]
     else:
         labels = label
@@ -245,8 +245,10 @@ def skip(msg=None):
          Decorator, which, when applied to a function, causes SkipTest
          to be raised, with the optional message added.
       """
-
-    return skipif(True,msg)
+    if msg and not isinstance(msg, str):
+        raise ValueError('invalid object passed to `@skip` decorator, did you '
+                         'meant `@skip()` with brackets ?')
+    return skipif(True, msg)
 
 
 def onlyif(condition, msg):
@@ -268,7 +270,7 @@ def module_not_available(module):
     available, but delay the 'import numpy' to test execution time.
     """
     try:
-        mod = __import__(module)
+        mod = import_module(module)
         mod_not_avail = False
     except ImportError:
         mod_not_avail = True
@@ -278,13 +280,14 @@ def module_not_available(module):
 
 def decorated_dummy(dec, name):
     """Return a dummy function decorated with dec, with the given name.
-    
+
     Examples
     --------
     import IPython.testing.decorators as dec
     setup = dec.decorated_dummy(dec.skip_if_no_x11, __name__)
     """
-    warnings.warn("The function `make_label_dec` is deprecated and might be removed in IPython 5.0", DeprecationWarning)
+    warnings.warn("The function `decorated_dummy` is deprecated since IPython 4.0",
+        DeprecationWarning, stacklevel=2)
     dummy = lambda: None
     dummy.__name__ = name
     return dec(dummy)
@@ -315,9 +318,15 @@ _x11_skip_msg = "Skipped under *nix when X11/XOrg not available"
 
 skip_if_no_x11 = skipif(_x11_skip_cond, _x11_skip_msg)
 
+
+# Decorators to skip certain tests on specific platform/python combinations
+skip_win32_py38 = skipif(sys.version_info > (3,8) and os.name == 'nt')
+
+
 # not a decorator itself, returns a dummy function to be used as setup
 def skip_file_no_x11(name):
-    warnings.warn("The function `skip_file_no_x11` is deprecated and might be removed in IPython 5.0", DeprecationWarning)
+    warnings.warn("The function `skip_file_no_x11` is deprecated since IPython 4.0",
+            DeprecationWarning, stacklevel=2)
     return decorated_dummy(skip_if_no_x11, name) if _x11_skip_cond else None
 
 # Other skip decorators
@@ -332,12 +341,6 @@ skipif_not_matplotlib = skip_without('matplotlib')
 skipif_not_sympy = skip_without('sympy')
 
 skip_known_failure = knownfailureif(True,'This test is known to fail')
-
-known_failure_py3 = knownfailureif(sys.version_info[0] >= 3, 
-                                    'This test is known to fail on Python 3.')
-
-py2_only = skipif(PY3, "This test only runs on Python 2.")
-py3_only = skipif(PY2, "This test only runs on Python 3.")
 
 # A null 'decorator', useful to make more readable code that needs to pick
 # between different decorators based on OS or other conditions
@@ -362,7 +365,7 @@ def onlyif_cmds_exist(*commands):
     Decorator to skip test when at least one of `commands` is not found.
     """
     for cmd in commands:
-        if not which(cmd):
+        if not shutil.which(cmd):
             return skip("This test runs only if command '{0}' "
                         "is installed".format(cmd))
     return null_deco
@@ -371,9 +374,10 @@ def onlyif_any_cmd_exists(*commands):
     """
     Decorator to skip test unless at least one of `commands` is found.
     """
-    warnings.warn("The function `onlyif_any_cmd_exists` is deprecated and might be removed in IPython 5.0", DeprecationWarning)
+    warnings.warn("The function `onlyif_any_cmd_exists` is deprecated since IPython 4.0",
+            DeprecationWarning, stacklevel=2)
     for cmd in commands:
-        if which(cmd):
+        if shutil.which(cmd):
             return null_deco
     return skip("This test runs only if one of the commands {0} "
                 "is installed".format(commands))

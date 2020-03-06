@@ -19,13 +19,9 @@ import unittest
 
 from IPython.testing import decorators as dec
 from IPython.testing import tools as tt
-from IPython.utils.py3compat import PY3
 
-sqlite_err_maybe = dec.module_not_available('sqlite3')
-SQLITE_NOT_AVAILABLE_ERROR = ('WARNING: IPython History requires SQLite,'
-                              ' your history will not be saved\n')
 
-class TestFileToRun(unittest.TestCase, tt.TempFileMixin):
+class TestFileToRun(tt.TempFileMixin, unittest.TestCase):
     """Test the behavior of the file_to_run parameter."""
 
     def test_py_script_file_attribute(self):
@@ -33,7 +29,7 @@ class TestFileToRun(unittest.TestCase, tt.TempFileMixin):
         src = "print(__file__)\n"
         self.mktmp(src)
 
-        err = SQLITE_NOT_AVAILABLE_ERROR if sqlite_err_maybe else None
+        err = None
         tt.ipexec_validate(self.fname, self.fname, err)
 
     def test_ipy_script_file_attribute(self):
@@ -41,7 +37,7 @@ class TestFileToRun(unittest.TestCase, tt.TempFileMixin):
         src = "print(__file__)\n"
         self.mktmp(src, ext='.ipy')
 
-        err = SQLITE_NOT_AVAILABLE_ERROR if sqlite_err_maybe else None
+        err = None
         tt.ipexec_validate(self.fname, self.fname, err)
 
     # The commands option to ipexec_validate doesn't work on Windows, and it
@@ -52,17 +48,10 @@ class TestFileToRun(unittest.TestCase, tt.TempFileMixin):
         src = "True\n"
         self.mktmp(src)
 
-        err = SQLITE_NOT_AVAILABLE_ERROR if sqlite_err_maybe else None
-        tt.ipexec_validate(self.fname, 'False', err, options=['-i'],
-                           commands=['"__file__" in globals()', 'exit()'])
-
-    @dec.skip_win32
-    @dec.skipif(PY3)
-    def test_py_script_file_compiler_directive(self):
-        """Test `__future__` compiler directives with `ipython -i file.py`"""
-        src = "from __future__ import division\n"
-        self.mktmp(src)
-
-        err = SQLITE_NOT_AVAILABLE_ERROR if sqlite_err_maybe else None
-        tt.ipexec_validate(self.fname, 'float', err, options=['-i'],
-                           commands=['type(1/2)', 'exit()'])
+        out, err = tt.ipexec(self.fname, options=['-i'],
+                           commands=['"__file__" in globals()', 'print(123)', 'exit()'])
+        if 'False' not in out:
+            print("Subprocess stderr:")
+            print(err)
+            print('-----')
+            raise AssertionError("'False' not found in %r" % out)

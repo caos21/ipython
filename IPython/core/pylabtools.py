@@ -1,6 +1,5 @@
 # -*- coding: utf-8 -*-
 """Pylab (matplotlib) support utilities."""
-from __future__ import print_function
 
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
@@ -9,7 +8,6 @@ from io import BytesIO
 
 from IPython.core.display import _pngxy
 from IPython.utils.decorators import flag_calls
-from IPython.utils import py3compat
 
 # If user specifies a GUI, that dictates the backend, otherwise we read the
 # user's mpl default from the mpl rc structure
@@ -17,13 +15,20 @@ backends = {'tk': 'TkAgg',
             'gtk': 'GTKAgg',
             'gtk3': 'GTK3Agg',
             'wx': 'WXAgg',
-            'qt': 'Qt4Agg', # qt3 not supported
             'qt4': 'Qt4Agg',
             'qt5': 'Qt5Agg',
+            'qt': 'Qt5Agg',
             'osx': 'MacOSX',
             'nbagg': 'nbAgg',
             'notebook': 'nbAgg',
-            'inline' : 'module://ipykernel.pylab.backend_inline'}
+            'agg': 'agg',
+            'svg': 'svg',
+            'pdf': 'pdf',
+            'ps': 'ps',
+            'inline': 'module://ipykernel.pylab.backend_inline',
+            'ipympl': 'module://ipympl.backend_nbagg',
+            'widget': 'module://ipympl.backend_nbagg',
+            }
 
 # We also need a reverse backends2guis mapping that will properly choose which
 # GUI support to activate based on the desired matplotlib backend.  For the
@@ -38,6 +43,13 @@ backend2gui['GTK'] = backend2gui['GTKCairo'] = 'gtk'
 backend2gui['GTK3Cairo'] = 'gtk3'
 backend2gui['WX'] = 'wx'
 backend2gui['CocoaAgg'] = 'osx'
+# And some backends that don't need GUI integration
+del backend2gui['nbAgg']
+del backend2gui['agg']
+del backend2gui['svg']
+del backend2gui['pdf']
+del backend2gui['ps']
+del backend2gui['module://ipykernel.pylab.backend_inline']
 
 #-----------------------------------------------------------------------------
 # Matplotlib utilities
@@ -91,35 +103,38 @@ def print_figure(fig, fmt='png', bbox_inches='tight', **kwargs):
     Any keyword args are passed to fig.canvas.print_figure,
     such as ``quality`` or ``bbox_inches``.
     """
-    from matplotlib import rcParams
     # When there's an empty figure, we shouldn't return anything, otherwise we
     # get big blank areas in the qt console.
     if not fig.axes and not fig.lines:
         return
 
-    dpi = rcParams['savefig.dpi']
+    dpi = fig.dpi
     if fmt == 'retina':
         dpi = dpi * 2
         fmt = 'png'
     
     # build keyword args
-    kw = dict(
-        format=fmt,
-        facecolor=fig.get_facecolor(),
-        edgecolor=fig.get_edgecolor(),
-        dpi=dpi,
-        bbox_inches=bbox_inches,
-    )
+    kw = {
+        "format":fmt,
+        "facecolor":fig.get_facecolor(),
+        "edgecolor":fig.get_edgecolor(),
+        "dpi":dpi,
+        "bbox_inches":bbox_inches,
+    }
     # **kwargs get higher priority
     kw.update(kwargs)
-    
+
     bytes_io = BytesIO()
+    if fig.canvas is None:
+        from matplotlib.backend_bases import FigureCanvasBase
+        FigureCanvasBase(fig)
+
     fig.canvas.print_figure(bytes_io, **kw)
     data = bytes_io.getvalue()
     if fmt == 'svg':
         data = data.decode('utf-8')
     return data
-    
+
 def retina_figure(fig, **kwargs):
     """format a figure as a pixel-doubled (retina) PNG"""
     pngdata = print_figure(fig, fmt='retina', **kwargs)
@@ -128,7 +143,7 @@ def retina_figure(fig, **kwargs):
     if pngdata is None:
         return
     w, h = _pngxy(pngdata)
-    metadata = dict(width=w//2, height=h//2)
+    metadata = {"width": w//2, "height":h//2}
     return pngdata, metadata
 
 # We need a little factory function here to create the closure where
@@ -157,7 +172,7 @@ def mpl_runner(safe_execfile):
         properly handle interactive rendering."""
 
         import matplotlib
-        import matplotlib.pylab as pylab
+        import matplotlib.pyplot as plt
 
         #print '*** Matplotlib runner ***' # dbg
         # turn off rendering until end of script
@@ -166,11 +181,29 @@ def mpl_runner(safe_execfile):
         safe_execfile(fname,*where,**kw)
         matplotlib.interactive(is_interactive)
         # make rendering call now, if the user tried to do it
-        if pylab.draw_if_interactive.called:
-            pylab.draw()
-            pylab.draw_if_interactive.called = False
+        if plt.draw_if_interactive.called:
+            plt.draw()
+            plt.draw_if_interactive.called = False
+
+        # re-draw everything that is stale
+        try:
+            da = plt.draw_all
+        except AttributeError:
+            pass
+        else:
+            da()
 
     return mpl_execfile
+
+
+def _reshow_nbagg_figure(fig):
+    """reshow an nbagg figure"""
+    try:
+        reshow = fig.canvas.manager.reshow
+    except AttributeError:
+        raise NotImplementedError()
+    else:
+        reshow()
 
 
 def select_figure_formats(shell, formats, **kwargs):
@@ -185,21 +218,25 @@ def select_figure_formats(shell, formats, **kwargs):
     **kwargs : any
         Extra keyword arguments to be passed to fig.canvas.print_figure.
     """
+    import matplotlib
     from matplotlib.figure import Figure
-    from ipykernel.pylab import backend_inline
 
     svg_formatter = shell.display_formatter.formatters['image/svg+xml']
     png_formatter = shell.display_formatter.formatters['image/png']
     jpg_formatter = shell.display_formatter.formatters['image/jpeg']
     pdf_formatter = shell.display_formatter.formatters['application/pdf']
 
-    if isinstance(formats, py3compat.string_types):
+    if isinstance(formats, str):
         formats = {formats}
     # cast in case of list / tuple
     formats = set(formats)
 
     [ f.pop(Figure, None) for f in shell.display_formatter.formatters.values() ]
-    
+    mplbackend = matplotlib.get_backend().lower()
+    if mplbackend == 'nbagg' or mplbackend == 'module://ipympl.backend_nbagg':
+        formatter = shell.display_formatter.ipython_display_formatter
+        formatter.for_type(Figure, _reshow_nbagg_figure)
+
     supported = {'png', 'png2x', 'retina', 'jpg', 'jpeg', 'svg', 'pdf'}
     bad = formats.difference(supported)
     if bad:
@@ -229,7 +266,7 @@ def find_gui_and_backend(gui=None, gui_select=None):
     Parameters
     ----------
     gui : str
-        Can be one of ('tk','gtk','wx','qt','qt4','inline').
+        Can be one of ('tk','gtk','wx','qt','qt4','inline','agg').
     gui_select : str
         Can be one of ('tk','gtk','wx','qt','qt4','inline').
         This is any gui already selected by the shell.
@@ -237,7 +274,7 @@ def find_gui_and_backend(gui=None, gui_select=None):
     Returns
     -------
     A tuple of (gui, backend) where backend is one of ('TkAgg','GTKAgg',
-    'WXAgg','Qt4Agg','module://ipykernel.pylab.backend_inline').
+    'WXAgg','Qt4Agg','module://ipykernel.pylab.backend_inline','agg').
     """
 
     import matplotlib
@@ -245,6 +282,8 @@ def find_gui_and_backend(gui=None, gui_select=None):
     if gui and gui != 'auto':
         # select backend based on requested gui
         backend = backends[gui]
+        if gui == 'agg':
+            gui = None
     else:
         # We need to read the backend from the original data structure, *not*
         # from mpl.rcParams, since a prior invocation of %matplotlib may have
@@ -275,17 +314,17 @@ def activate_matplotlib(backend):
     # magic of switch_backend().
     matplotlib.rcParams['backend'] = backend
 
-    import matplotlib.pyplot
-    matplotlib.pyplot.switch_backend(backend)
+    # Due to circular imports, pyplot may be only partially initialised
+    # when this function runs.
+    # So avoid needing matplotlib attribute-lookup to access pyplot.
+    from matplotlib import pyplot as plt
 
-    # This must be imported last in the matplotlib series, after
-    # backend/interactivity choices have been made
-    import matplotlib.pylab as pylab
+    plt.switch_backend(backend)
 
-    pylab.show._needmain = False
+    plt.show._needmain = False
     # We need to detect at runtime whether show() is called by the user.
     # For this, we wrap it into a decorator which adds a 'called' flag.
-    pylab.draw_if_interactive = flag_calls(pylab.draw_if_interactive)
+    plt.draw_if_interactive = flag_calls(plt.draw_if_interactive)
 
 
 def import_pylab(user_ns, import_all=True):
@@ -341,7 +380,7 @@ def configure_inline_support(shell, backend):
         from ipykernel.pylab.backend_inline import InlineBackend
     except ImportError:
         return
-    from matplotlib import pyplot
+    import matplotlib
 
     cfg = InlineBackend.instance(parent=shell)
     cfg.shell = shell
@@ -353,11 +392,11 @@ def configure_inline_support(shell, backend):
         shell.events.register('post_execute', flush_figures)
 
         # Save rcParams that will be overwrittern
-        shell._saved_rcParams = dict()
+        shell._saved_rcParams = {}
         for k in cfg.rc:
-            shell._saved_rcParams[k] = pyplot.rcParams[k]
+            shell._saved_rcParams[k] = matplotlib.rcParams[k]
         # load inline_rc
-        pyplot.rcParams.update(cfg.rc)
+        matplotlib.rcParams.update(cfg.rc)
         new_backend_name = "inline"
     else:
         from ipykernel.pylab.backend_inline import flush_figures
@@ -366,7 +405,7 @@ def configure_inline_support(shell, backend):
         except ValueError:
             pass
         if hasattr(shell, '_saved_rcParams'):
-            pyplot.rcParams.update(shell._saved_rcParams)
+            matplotlib.rcParams.update(shell._saved_rcParams)
             del shell._saved_rcParams
         new_backend_name = "other"
 

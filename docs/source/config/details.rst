@@ -2,108 +2,120 @@
 Specific config details
 =======================
 
-Prompts
-=======
+.. _custom_prompts:
 
-In the terminal, the format of the input and output prompts can be
-customised. This does not currently affect other frontends.
+Custom Prompts
+==============
 
-The following codes in the prompt string will be substituted into the
-prompt string:
+.. versionchanged:: 5.0
 
-======  ===================================  =====================================================
-Short   Long                                 Notes
-======  ===================================  =====================================================
-%n,\\#  {color.number}{count}{color.prompt}  history counter with bolding
-\\N     {count}                              history counter without bolding
-\\D     {dots}                               series of dots the same width as the history counter
-\\T     {time}                               current time
-\\w     {cwd}                                current working directory
-\\W     {cwd_last}                           basename of CWD
-\\Xn    {cwd_x[n]}                           Show the last n terms of the CWD. n=0 means show all.
-\\Yn    {cwd_y[n]}                           Like \Xn, but show '~' for $HOME
-\\h                                          hostname, up to the first '.'
-\\H                                          full hostname
-\\u                                          username (from the $USER environment variable)
-\\v                                          IPython version
-\\$                                          root symbol ("$" for normal user or "#" for root)
-``\\``                                       escaped '\\'
-\\n                                          newline
-\\r                                          carriage return
-n/a     {color.<Name>}                       set terminal colour - see below for list of names
-======  ===================================  =====================================================
+From IPython 5, prompts are produced as a list of Pygments tokens, which are
+tuples of (token_type, text). You can customise prompts by writing a method
+which generates a list of tokens.
 
-Available colour names are: Black, BlinkBlack, BlinkBlue, BlinkCyan,
-BlinkGreen, BlinkLightGray, BlinkPurple, BlinkRed, BlinkYellow, Blue,
-Brown, Cyan, DarkGray, Green, LightBlue, LightCyan, LightGray, LightGreen,
-LightPurple, LightRed, Purple, Red, White, Yellow. The selected colour
-scheme also defines the names *prompt* and *number*. Finally, the name
-*normal* resets the terminal to its default colour.
+There are four kinds of prompt:
 
-So, this config::
+* The **in** prompt is shown before the first line of input
+  (default like ``In [1]:``).
+* The **continuation** prompt is shown before further lines of input
+  (default like ``...:``).
+* The **rewrite** prompt is shown to highlight how special syntax has been
+  interpreted (default like ``----->``).
+* The **out** prompt is shown before the result from evaluating the input
+  (default like ``Out[1]:``).
 
-     c.PromptManager.in_template = "{color.LightGreen}{time}{color.Yellow} \u{color.normal}>>>"
+Custom prompts are supplied together as a class. If you want to customise only
+some of the prompts, inherit from :class:`IPython.terminal.prompts.Prompts`,
+which defines the defaults. The required interface is like this:
 
-will produce input prompts with the time in light green, your username
-in yellow, and a ``>>>`` prompt in the default terminal colour.
+.. class:: MyPrompts(shell)
 
+   Prompt style definition. *shell* is a reference to the
+   :class:`~.TerminalInteractiveShell` instance.
+
+   .. method:: in_prompt_tokens(cli=None)
+               continuation_prompt_tokens(self, cli=None, width=None)
+               rewrite_prompt_tokens()
+               out_prompt_tokens()
+
+      Return the respective prompts as lists of ``(token_type, text)`` tuples.
+
+      For continuation prompts, *width* is an integer representing the width of
+      the prompt area in terminal columns.
+
+      *cli*, where used, is the prompt_toolkit ``CommandLineInterface`` instance.
+      This is mainly for compatibility with the API prompt_toolkit expects.
+
+Here is an example Prompt class that will show the current working directory
+in the input prompt:
+
+.. code-block:: python
+
+    from IPython.terminal.prompts import Prompts, Token
+    import os
+
+    class MyPrompt(Prompts):
+         def in_prompt_tokens(self, cli=None):
+             return [(Token, os.getcwd()),
+                     (Token.Prompt, ' >>>')]
+
+To set the new prompt, assign it to the ``prompts`` attribute of the IPython
+shell:
+
+.. code-block:: python
+
+    In [2]: ip = get_ipython()
+       ...: ip.prompts = MyPrompt(ip)
+
+    /home/bob >>> # it works
+
+See ``IPython/example/utils/cwd_prompt.py`` for an example of how to write an
+extensions to customise prompts.
+
+Inside IPython or in a startup script, you can use a custom prompts class
+by setting ``get_ipython().prompts`` to an *instance* of the class.
+In configuration, ``TerminalInteractiveShell.prompts_class`` may be set to
+either the class object, or a string of its full importable name.
+
+To include invisible terminal control sequences in a prompt, use
+``Token.ZeroWidthEscape`` as the token type. Tokens with this type are ignored
+when calculating the width.
+
+Colours in the prompt are determined by the token types and the highlighting
+style; see below for more details. The tokens used in the default prompts are
+``Prompt``, ``PromptNum``, ``OutPrompt`` and ``OutPromptNum``.
 
 .. _termcolour:
 
 Terminal Colors
 ===============
 
-The default IPython configuration has most bells and whistles turned on
-(they're pretty safe). But there's one that may cause problems on some
-systems: the use of color on screen for displaying information. This is
-very useful, since IPython can show prompts and exception tracebacks
-with various colors, display syntax-highlighted source code, and in
-general make it easier to visually parse information.
+.. versionchanged:: 5.0
 
-The following terminals seem to handle the color sequences fine:
+There are two main configuration options controlling colours.
 
-    * Linux main text console, KDE Konsole, Gnome Terminal, E-term,
-      rxvt, xterm.
-    * CDE terminal (tested under Solaris). This one boldfaces light colors.
-    * (X)Emacs buffers. See the :ref:`emacs` section for more details on
-      using IPython with (X)Emacs.
-    * A Windows (XP/2k) command prompt with pyreadline_.
-    * A Windows (XP/2k) CygWin shell. Although some users have reported
-      problems; it is not clear whether there is an issue for everyone
-      or only under specific configurations. If you have full color
-      support under cygwin, please post to the IPython mailing list so
-      this issue can be resolved for all users.
+``InteractiveShell.colors`` sets the colour of tracebacks and object info (the
+output from e.g. ``zip?``). It may also affect other things if the option below
+is set to ``'legacy'``. It has four case-insensitive values:
+``'nocolor', 'neutral', 'linux', 'lightbg'``. The default is *neutral*, which
+should be legible on either dark or light terminal backgrounds. *linux* is
+optimised for dark backgrounds and *lightbg* for light ones.
 
-.. _pyreadline: https://code.launchpad.net/pyreadline
-      
-These have shown problems:
+``TerminalInteractiveShell.highlighting_style`` determines prompt colours and
+syntax highlighting. It takes the name (as a string) or class (as a subclass of
+``pygments.style.Style``) of a Pygments style, or the special value ``'legacy'``
+to pick a style in accordance with ``InteractiveShell.colors``.
 
-    * Windows command prompt in WinXP/2k logged into a Linux machine via
-      telnet or ssh.
-    * Windows native command prompt in WinXP/2k, without Gary Bishop's
-      extensions. Once Gary's readline library is installed, the normal
-      WinXP/2k command prompt works perfectly.
+You can see the Pygments styles available on your system by running::
 
-Currently the following color schemes are available:
+    import pygments
+    list(pygments.styles.get_all_styles())
 
-    * NoColor: uses no color escapes at all (all escapes are empty '' ''
-      strings). This 'scheme' is thus fully safe to use in any terminal.
-    * Linux: works well in Linux console type environments: dark
-      background with light fonts. It uses bright colors for
-      information, so it is difficult to read if you have a light
-      colored background.
-    * LightBG: the basic colors are similar to those in the Linux scheme
-      but darker. It is easy to read in terminals with light backgrounds.
-
-IPython uses colors for two main groups of things: prompts and
-tracebacks which are directly printed to the terminal, and the object
-introspection system which passes large sets of data through a pager.
-
-If you are seeing garbage sequences in your terminal and no colour, you
-may need to disable colours: run ``%colors NoColor`` inside IPython, or
-add this to a config file::
-
-    c.InteractiveShell.colors = 'NoColor'
+Additionally, ``TerminalInteractiveShell.highlighting_style_overrides`` can override
+specific styles in the highlighting. It should be a dictionary mapping Pygments
+token types to strings defining the style. See `Pygments' documentation
+<http://pygments.org/docs/styles/#creating-own-styles>`__ for the language used
+to define styles.
 
 Colors in the pager
 -------------------
@@ -182,3 +194,120 @@ With (X)EMacs >= 24, You can enable IPython in python-mode with:
 .. _`(X)Emacs`: http://www.gnu.org/software/emacs/
 .. _TextMate: http://macromates.com/
 .. _vim: http://www.vim.org/
+
+.. _custom_keyboard_shortcuts:
+
+Keyboard Shortcuts
+==================
+
+.. versionchanged:: 5.0
+
+You can customise keyboard shortcuts for terminal IPython. Put code like this in
+a :ref:`startup file <startup_files>`::
+
+    from IPython import get_ipython
+    from prompt_toolkit.enums import DEFAULT_BUFFER
+    from prompt_toolkit.keys import Keys
+    from prompt_toolkit.filters import HasFocus, HasSelection, ViInsertMode, EmacsInsertMode
+
+    ip = get_ipython()
+    insert_mode = ViInsertMode() | EmacsInsertMode()
+
+    def insert_unexpected(event):
+        buf = event.current_buffer
+        buf.insert_text('The Spanish Inquisition')
+    # Register the shortcut if IPython is using prompt_toolkit
+    if getattr(ip, 'pt_app', None):
+        registry = ip.pt_app.key_bindings
+        registry.add_binding(Keys.ControlN,
+                         filter=(HasFocus(DEFAULT_BUFFER)
+                                 & ~HasSelection()
+                                 & insert_mode))(insert_unexpected)
+
+
+Here is a second example that bind the key sequence ``j``, ``k`` to switch to
+VI input mode to ``Normal`` when in insert mode::
+
+   from IPython import get_ipython
+   from prompt_toolkit.enums import DEFAULT_BUFFER
+   from prompt_toolkit.filters import HasFocus, ViInsertMode
+   from prompt_toolkit.key_binding.vi_state import InputMode
+
+   ip = get_ipython()
+
+   def switch_to_navigation_mode(event):
+      vi_state = event.cli.vi_state
+      vi_state.input_mode = InputMode.NAVIGATION
+
+   if getattr(ip, 'pt_app', None):
+      registry = ip.pt_app.key_bindings
+      registry.add_binding(u'j',u'k',
+                           filter=(HasFocus(DEFAULT_BUFFER)
+                                    & ViInsertMode()))(switch_to_navigation_mode)
+
+For more information on filters and what you can do with the ``event`` object,
+`see the prompt_toolkit docs
+<http://python-prompt-toolkit.readthedocs.io/en/latest/pages/building_prompts.html#adding-custom-key-bindings>`__.
+
+
+Enter to execute
+----------------
+
+In the Terminal IPython shell – which by default uses the ``prompt_toolkit``
+interface, the semantic meaning of pressing the :kbd:`Enter` key can be
+ambiguous. In some case :kbd:`Enter` should execute code, and in others it
+should add a new line. IPython uses heuristics to decide whether to execute or
+insert a new line at cursor position. For example, if we detect that the current
+code is not valid Python, then the user is likely editing code and the right
+behavior is to likely to insert a new line. If the current code is a simple
+statement like `ord('*')`, then the right behavior is likely to execute. Though
+the exact desired semantics often varies from users to users.
+
+As the exact behavior of :kbd:`Enter` is ambiguous, it has been special cased
+to allow users to completely configure the behavior they like. Hence you can
+have enter always execute code. If you prefer fancier behavior, you need to get
+your hands dirty and read the ``prompt_toolkit`` and IPython documentation
+though. See :ghpull:`10500`, set the
+``c.TerminalInteractiveShell.handle_return`` option and get inspiration from the
+following example that only auto-executes the input if it begins with a bang or
+a modulo character (``!`` or ``%``). To use the following code, add it to your
+IPython configuration::
+
+    def custom_return(shell):
+
+        """This function is required by the API. It takes a reference to
+        the shell, which is the same thing `get_ipython()` evaluates to.
+        This function must return a function that handles each keypress
+        event. That function, named `handle` here, references `shell`
+        by closure."""
+
+        def handle(event):
+
+            """This function is called each time `Enter` is pressed,
+            and takes a reference to a Prompt Toolkit event object.
+            If the current input starts with a bang or modulo, then
+            the input is executed, otherwise a newline is entered,
+            followed by any spaces needed to auto-indent."""
+
+            # set up a few handy references to nested items...
+
+            buffer = event.current_buffer
+            document = buffer.document
+            text = document.text
+
+            if text.startswith('!') or text.startswith('%'): # execute the input...
+
+                buffer.accept_action.validate_and_handle(event.cli, buffer)
+
+            else: # insert a newline with auto-indentation...
+
+                if document.line_count > 1: text = text[:document.cursor_position]
+                indent = shell.check_complete(text)[1]
+                buffer.insert_text('\n' + indent)
+            
+                # if you just wanted a plain newline without any indentation, you
+                # could use `buffer.insert_text('\n')` instead of the lines above
+
+        return handle
+
+    c.TerminalInteractiveShell.handle_return = custom_return

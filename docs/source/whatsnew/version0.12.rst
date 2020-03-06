@@ -97,8 +97,7 @@ for floating matplotlib windows or::
 for plotting support with automatically inlined figures.  Note that it is now
 possible also to activate pylab support at runtime via ``%pylab``, so you do
 not need to make this decision when starting the server.
-  
-See :ref:`the Notebook docs <htmlnotebook>` for technical details.
+
 
 .. _two_process_console:
 
@@ -173,8 +172,8 @@ Other important new features
 ----------------------------
 
 * **SSH Tunnels**: In 0.11, the :mod:`IPython.parallel` Client could tunnel its
-  connections to the Controller via ssh. Now, the QtConsole :ref:`supports
-  <ssh_tunnels>` ssh tunneling, as do parallel engines.
+  connections to the Controller via ssh. Now, the QtConsole supports ssh tunneling,
+  as do parallel engines.
 
 * **relaxed command-line parsing**: 0.11 was released with overly-strict
   command-line parsing, preventing the ability to specify arguments with spaces,
@@ -294,7 +293,7 @@ Backwards incompatible changes
   deprecated, but continue to work.
 
 * For embedding a shell, note that the parameters ``user_global_ns`` and
-  ``global_ns`` have been deprectated in favour of ``user_module`` and
+  ``global_ns`` have been deprecated in favour of ``user_module`` and
   ``module`` respsectively.  The new parameters expect a module-like object,
   rather than a namespace dict.  The old parameters remain for backwards
   compatibility, although ``user_global_ns`` is now ignored. The ``user_ns``

@@ -1,6 +1,5 @@
 """Implementation of configuration-related magic functions.
 """
-from __future__ import print_function
 #-----------------------------------------------------------------------------
 #  Copyright (c) 2012 The IPython Development Team.
 #
@@ -19,13 +18,13 @@ import re
 # Our own packages
 from IPython.core.error import UsageError
 from IPython.core.magic import Magics, magics_class, line_magic
-from IPython.utils.warn import error
+from logging import error
 
 #-----------------------------------------------------------------------------
 # Magic implementation classes
 #-----------------------------------------------------------------------------
 
-reg = re.compile('^\w+\.\w+$')
+reg = re.compile(r'^\w+\.\w+$')
 @magics_class
 class ConfigMagics(Magics):
 
@@ -60,7 +59,6 @@ class ConfigMagics(Magics):
                 PrefilterManager
                 AliasManager
                 IPCompleter
-                PromptManager
                 DisplayFormatter
 
         To view what is configurable on a given class, just pass the class
@@ -110,8 +108,9 @@ class ConfigMagics(Magics):
         # some IPython objects are Configurable, but do not yet have
         # any configurable traits.  Exclude them from the effects of
         # this magic, as their presence is just noise:
-        configurables = [ c for c in self.shell.configurables
-                          if c.__class__.class_traits(config=True) ]
+        configurables = sorted(set([ c for c in self.shell.configurables
+                                     if c.__class__.class_traits(config=True)
+                                     ]), key=lambda x: x.__class__.__name__)
         classnames = [ c.__class__.__name__ for c in configurables ]
 
         line = s.strip()
@@ -150,7 +149,7 @@ class ConfigMagics(Magics):
         # leave quotes on args when splitting, because we want
         # unquoted args to eval in user_ns
         cfg = Config()
-        exec("cfg."+line, locals(), self.shell.user_ns)
+        exec("cfg."+line, self.shell.user_ns, locals())
 
         for configurable in configurables:
             try:

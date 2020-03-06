@@ -1,6 +1,5 @@
 """Implementation of magic functions that control various automatic behaviors.
 """
-from __future__ import print_function
 #-----------------------------------------------------------------------------
 #  Copyright (c) 2012 The IPython Development Team.
 #
@@ -16,7 +15,7 @@ from __future__ import print_function
 # Our own packages
 from IPython.core.magic import Bunch, Magics, magics_class, line_magic
 from IPython.testing.skipdoctest import skip_doctest
-from IPython.utils.warn import error
+from logging import error
 
 #-----------------------------------------------------------------------------
 # Magic implementation classes
@@ -35,7 +34,7 @@ class AutoMagics(Magics):
     def automagic(self, parameter_s=''):
         """Make magic functions callable without having to type the initial %.
 
-        Without argumentsl toggles on/off (when off, you must call it as
+        Without arguments toggles on/off (when off, you must call it as
         %automagic, of course).  With arguments it sets the value, and you can
         use any of (case insensitive):
 

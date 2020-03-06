@@ -3,10 +3,15 @@
 Issues closed in the 2.x development cycle
 ==========================================
 
-Issues closed in 2.4.0
+Issues closed in 2.4.1
 ----------------------
 
 GitHub stats for 2014/11/01 - 2015/01/30
+
+.. note::
+
+    IPython 2.4.0 was released without a few of the backports listed below.
+    2.4.1 has the correct patches intended for 2.4.0.
 
 These lists are automatically generated, and may be incomplete or contain duplicates.
 
@@ -31,7 +36,7 @@ Pull Requests (10):
 * :ghpull:`6778`: backport nbformat v4 to 2.x
 * :ghpull:`6761`: object_info_reply field is oname, not name
 * :ghpull:`6653`: Fix IPython.utils.ansispan() to ignore stray [0m
-* :ghpull:`6706`: Correctly display prompt numbers that are 'None'
+* :ghpull:`6706`: Correctly display prompt numbers that are ``None``
 * :ghpull:`6634`: don't use contains in SelectWidget item_query
 * :ghpull:`6593`: note how to start the qtconsole
 * :ghpull:`6281`: more minor fixes to release scripts
@@ -795,7 +800,7 @@ Pull Requests (687):
 * :ghpull:`4768`: Qt console: Fix _prompt_pos accounting on timer flush output.
 * :ghpull:`4727`: Remove Nbconvert template loading magic
 * :ghpull:`4763`: Set numpydoc options to produce fewer Sphinx warnings.
-* :ghpull:`4770`: alway define aliases, even if empty
+* :ghpull:`4770`: always define aliases, even if empty
 * :ghpull:`4766`: add `python -m` entry points for everything
 * :ghpull:`4767`: remove manpages for irunner, iplogger
 * :ghpull:`4751`: Added --post-serve explanation into the nbconvert docs.
@@ -1411,13 +1416,13 @@ Issues (434):
 * :ghissue:`4759`: Application._load_config_files log parameter default fails
 * :ghissue:`3153`: docs / file menu: explain how to exit the notebook
 * :ghissue:`4791`: Did updates to ipython_directive bork support for cython magic snippets?
-* :ghissue:`4385`: "Part 4 - Markdown Cells.ipynb" nbviewer example seems not well referenced in current online documentation page http://ipython.org/ipython-doc/stable/interactive/notebook.htm
+* :ghissue:`4385`: "Part 4 - Markdown Cells.ipynb" nbviewer example seems not well referenced in current online documentation page https://ipython.org/ipython-doc/stable/interactive/notebook.htm
 * :ghissue:`4655`: prefer marked to pandoc for markdown2html
 * :ghissue:`3441`: Fix focus related problems in the notebook
 * :ghissue:`3402`: Feature Request: Save As (latex, html,..etc) as a menu option in Notebook rather than explicit need to invoke nbconvert
 * :ghissue:`3224`: Revisit layout of notebook area
 * :ghissue:`2746`: rerunning a cell with long output (exception) scrolls to much (html notebook)
-* :ghissue:`2667`: can't save opened notebook if accidently delete the notebook in the dashboard
+* :ghissue:`2667`: can't save opened notebook if accidentally delete the notebook in the dashboard
 * :ghissue:`3026`: Reporting errors from _repr_<type>_ methods
 * :ghissue:`1844`: Notebook does not exist and permalinks
 * :ghissue:`2450`: [closed PR] Prevent jumping of window to input when output is clicked.

@@ -38,6 +38,11 @@ Give it a shot--you'll love it or you'll hate it.
   variables (but otherwise includes the information and context given by
   Verbose).
 
+.. note::
+
+  The verbose mode print all variables in the stack, which means it can
+  potentially leak sensitive information like access keys, or unencrypted
+  password.
 
 Installation instructions for VerboseTB::
 
@@ -62,6 +67,9 @@ ColorSchemeTable class. Currently the following exist:
   - LightBG: similar to Linux but swaps dark/light colors to be more readable
     in light background terminals.
 
+  - Neutral: a neutral color scheme that should be readable on both light and
+    dark background
+
 You can implement other color schemes easily, the syntax is fairly
 self-explanatory. Please send back new schemes you develop to the author for
 possible inclusion in future releases.
@@ -80,45 +88,28 @@ Inheritance diagram:
 # the file COPYING, distributed as part of this software.
 #*****************************************************************************
 
-from __future__ import unicode_literals
-from __future__ import print_function
 
-import dis
 import inspect
-import keyword
 import linecache
-import os
 import pydoc
-import re
 import sys
 import time
-import tokenize
 import traceback
-import types
 
-try:  # Python 2
-    generate_tokens = tokenize.generate_tokens
-except AttributeError:  # Python 3
-    generate_tokens = tokenize.tokenize
-
-# For purposes of monkeypatching inspect to fix a bug in it.
-from inspect import getsourcefile, getfile, getmodule, \
-    ismodule, isclass, ismethod, isfunction, istraceback, isframe, iscode
+import stack_data
+from pygments.formatters.terminal256 import Terminal256Formatter
+from pygments.styles import get_style_by_name
 
 # IPython's own modules
-# Modified pdb which doesn't damage IPython's readline handling
 from IPython import get_ipython
 from IPython.core import debugger
 from IPython.core.display_trap import DisplayTrap
 from IPython.core.excolors import exception_colors
-from IPython.utils import PyColorize
-from IPython.utils import io
-from IPython.utils import openpy
 from IPython.utils import path as util_path
 from IPython.utils import py3compat
-from IPython.utils import ulinecache
-from IPython.utils.data import uniq_stable
-from IPython.utils.warn import info, error
+from IPython.utils.terminal import get_terminal_size
+
+import IPython.utils.colorable as colorable
 
 # Globals
 # amount of space to put line numbers before verbose tracebacks
@@ -133,313 +124,70 @@ DEFAULT_SCHEME = 'NoColor'
 # ---------------------------------------------------------------------------
 # Code begins
 
-# Utility functions
-def inspect_error():
-    """Print a message about internal inspect errors.
-
-    These are unfortunately quite common."""
-
-    error('Internal Python error in the inspect module.\n'
-          'Below is the traceback from this internal error.\n')
-
-
-# This function is a monkeypatch we apply to the Python inspect module. We have
-# now found when it's needed (see discussion on issue gh-1456), and we have a
-# test case (IPython.core.tests.test_ultratb.ChangedPyFileTest) that fails if
-# the monkeypatch is not applied. TK, Aug 2012.
-def findsource(object):
-    """Return the entire source file and starting line number for an object.
-
-    The argument may be a module, class, method, function, traceback, frame,
-    or code object.  The source code is returned as a list of all the lines
-    in the file and the line number indexes a line in that list.  An IOError
-    is raised if the source code cannot be retrieved.
-
-    FIXED version with which we monkeypatch the stdlib to work around a bug."""
-
-    file = getsourcefile(object) or getfile(object)
-    # If the object is a frame, then trying to get the globals dict from its
-    # module won't work. Instead, the frame object itself has the globals
-    # dictionary.
-    globals_dict = None
-    if inspect.isframe(object):
-        # XXX: can this ever be false?
-        globals_dict = object.f_globals
-    else:
-        module = getmodule(object, file)
-        if module:
-            globals_dict = module.__dict__
-    lines = linecache.getlines(file, globals_dict)
-    if not lines:
-        raise IOError('could not get source code')
-
-    if ismodule(object):
-        return lines, 0
-
-    if isclass(object):
-        name = object.__name__
-        pat = re.compile(r'^(\s*)class\s*' + name + r'\b')
-        # make some effort to find the best matching class definition:
-        # use the one with the least indentation, which is the one
-        # that's most probably not inside a function definition.
-        candidates = []
-        for i in range(len(lines)):
-            match = pat.match(lines[i])
-            if match:
-                # if it's at toplevel, it's already the best one
-                if lines[i][0] == 'c':
-                    return lines, i
-                # else add whitespace to candidate list
-                candidates.append((match.group(1), i))
-        if candidates:
-            # this will sort by whitespace, and by line number,
-            # less whitespace first
-            candidates.sort()
-            return lines, candidates[0][1]
-        else:
-            raise IOError('could not find class definition')
-
-    if ismethod(object):
-        object = object.__func__
-    if isfunction(object):
-        object = object.__code__
-    if istraceback(object):
-        object = object.tb_frame
-    if isframe(object):
-        object = object.f_code
-    if iscode(object):
-        if not hasattr(object, 'co_firstlineno'):
-            raise IOError('could not find function definition')
-        pat = re.compile(r'^(\s*def\s)|(.*(?<!\w)lambda(:|\s))|^(\s*@)')
-        pmatch = pat.match
-        # fperez - fix: sometimes, co_firstlineno can give a number larger than
-        # the length of lines, which causes an error.  Safeguard against that.
-        lnum = min(object.co_firstlineno, len(lines)) - 1
-        while lnum > 0:
-            if pmatch(lines[lnum]): break
-            lnum -= 1
-
-        return lines, lnum
-    raise IOError('could not find code object')
-
-
-# This is a patched version of inspect.getargs that applies the (unmerged)
-# patch for http://bugs.python.org/issue14611 by Stefano Taschini.  This fixes
-# https://github.com/ipython/ipython/issues/8205 and
-# https://github.com/ipython/ipython/issues/8293
-def getargs(co):
-    """Get information about the arguments accepted by a code object.
-
-    Three things are returned: (args, varargs, varkw), where 'args' is
-    a list of argument names (possibly containing nested lists), and
-    'varargs' and 'varkw' are the names of the * and ** arguments or None."""
-    if not iscode(co):
-        raise TypeError('{!r} is not a code object'.format(co))
-
-    nargs = co.co_argcount
-    names = co.co_varnames
-    args = list(names[:nargs])
-    step = 0
-
-    # The following acrobatics are for anonymous (tuple) arguments.
-    for i in range(nargs):
-        if args[i][:1] in ('', '.'):
-            stack, remain, count = [], [], []
-            while step < len(co.co_code):
-                op = ord(co.co_code[step])
-                step = step + 1
-                if op >= dis.HAVE_ARGUMENT:
-                    opname = dis.opname[op]
-                    value = ord(co.co_code[step]) + ord(co.co_code[step+1])*256
-                    step = step + 2
-                    if opname in ('UNPACK_TUPLE', 'UNPACK_SEQUENCE'):
-                        remain.append(value)
-                        count.append(value)
-                    elif opname in ('STORE_FAST', 'STORE_DEREF'):
-                        if op in dis.haslocal:
-                            stack.append(co.co_varnames[value])
-                        elif op in dis.hasfree:
-                            stack.append((co.co_cellvars + co.co_freevars)[value])
-                        # Special case for sublists of length 1: def foo((bar))
-                        # doesn't generate the UNPACK_TUPLE bytecode, so if
-                        # `remain` is empty here, we have such a sublist.
-                        if not remain:
-                            stack[0] = [stack[0]]
-                            break
-                        else:
-                            remain[-1] = remain[-1] - 1
-                            while remain[-1] == 0:
-                                remain.pop()
-                                size = count.pop()
-                                stack[-size:] = [stack[-size:]]
-                                if not remain: break
-                                remain[-1] = remain[-1] - 1
-                            if not remain: break
-            args[i] = stack[0]
-
-    varargs = None
-    if co.co_flags & inspect.CO_VARARGS:
-        varargs = co.co_varnames[nargs]
-        nargs = nargs + 1
-    varkw = None
-    if co.co_flags & inspect.CO_VARKEYWORDS:
-        varkw = co.co_varnames[nargs]
-    return inspect.Arguments(args, varargs, varkw)
-
-
-# Monkeypatch inspect to apply our bugfix.
-def with_patch_inspect(f):
-    """decorator for monkeypatching inspect.findsource"""
-
-    def wrapped(*args, **kwargs):
-        save_findsource = inspect.findsource
-        save_getargs = inspect.getargs
-        inspect.findsource = findsource
-        inspect.getargs = getargs
-        try:
-            return f(*args, **kwargs)
-        finally:
-            inspect.findsource = save_findsource
-            inspect.getargs = save_getargs
-
-    return wrapped
-
-
-if py3compat.PY3:
-    fixed_getargvalues = inspect.getargvalues
-else:
-    # Fixes for https://github.com/ipython/ipython/issues/8293
-    #       and https://github.com/ipython/ipython/issues/8205.
-    # The relevant bug is caused by failure to correctly handle anonymous tuple
-    # unpacking, which only exists in Python 2.
-    fixed_getargvalues = with_patch_inspect(inspect.getargvalues)
-
-
-def fix_frame_records_filenames(records):
-    """Try to fix the filenames in each record from inspect.getinnerframes().
-
-    Particularly, modules loaded from within zip files have useless filenames
-    attached to their code object, and inspect.getinnerframes() just uses it.
-    """
-    fixed_records = []
-    for frame, filename, line_no, func_name, lines, index in records:
-        # Look inside the frame's globals dictionary for __file__,
-        # which should be better. However, keep Cython filenames since
-        # we prefer the source filenames over the compiled .so file.
-        filename = py3compat.cast_unicode_py2(filename, "utf-8")
-        if not filename.endswith(('.pyx', '.pxd', '.pxi')):
-            better_fn = frame.f_globals.get('__file__', None)
-            if isinstance(better_fn, str):
-                # Check the type just in case someone did something weird with
-                # __file__. It might also be None if the error occurred during
-                # import.
-                filename = better_fn
-        fixed_records.append((frame, filename, line_no, func_name, lines, index))
-    return fixed_records
-
-
-@with_patch_inspect
-def _fixed_getinnerframes(etb, context=1, tb_offset=0):
-    LNUM_POS, LINES_POS, INDEX_POS = 2, 4, 5
-
-    records = fix_frame_records_filenames(inspect.getinnerframes(etb, context))
-    # If the error is at the console, don't build any context, since it would
-    # otherwise produce 5 blank lines printed out (there is no file at the
-    # console)
-    rec_check = records[tb_offset:]
-    try:
-        rname = rec_check[0][1]
-        if rname == '<ipython console>' or rname.endswith('<string>'):
-            return rec_check
-    except IndexError:
-        pass
-
-    aux = traceback.extract_tb(etb)
-    assert len(records) == len(aux)
-    for i, (file, lnum, _, _) in zip(range(len(records)), aux):
-        maybeStart = lnum - 1 - context // 2
-        start = max(maybeStart, 0)
-        end = start + context
-        lines = ulinecache.getlines(file)[start:end]
-        buf = list(records[i])
-        buf[LNUM_POS] = lnum
-        buf[INDEX_POS] = lnum - 1 - start
-        buf[LINES_POS] = lines
-        records[i] = tuple(buf)
-    return records[tb_offset:]
-
 # Helper function -- largely belongs to VerboseTB, but we need the same
 # functionality to produce a pseudo verbose TB for SyntaxErrors, so that they
 # can be recognized properly by ipython.el's py-traceback-line-re
 # (SyntaxErrors have to be treated specially because they have no traceback)
 
-_parser = PyColorize.Parser()
 
+def _format_traceback_lines(lines, Colors, has_colors, lvals):
+    """
+    Format tracebacks lines with pointing arrow, leading numbers...
 
-def _format_traceback_lines(lnum, index, lines, Colors, lvals=None, scheme=None):
+    Parameters
+    ==========
+
+    lines: list[Line]
+    Colors:
+        ColorScheme used.
+    lvals: str
+        Values of local variables, already colored, to inject just after the error line.
+    """
     numbers_width = INDENT_SIZE - 1
     res = []
-    i = lnum - index
 
-    # This lets us get fully syntax-highlighted tracebacks.
-    if scheme is None:
-        ipinst = get_ipython()
-        if ipinst is not None:
-            scheme = ipinst.colors
-        else:
-            scheme = DEFAULT_SCHEME
+    for stack_line in lines:
+        if stack_line is stack_data.LINE_GAP:
+            res.append('%s   (...)%s\n' % (Colors.linenoEm, Colors.Normal))
+            continue
 
-    _line_format = _parser.format2
-
-    for line in lines:
-        line = py3compat.cast_unicode(line)
-
-        new_line, err = _line_format(line, 'str', scheme)
-        if not err: line = new_line
-
-        if i == lnum:
+        line = stack_line.render(pygmented=has_colors).rstrip('\n') + '\n'
+        lineno = stack_line.lineno
+        if stack_line.is_current:
             # This is the line with the error
-            pad = numbers_width - len(str(i))
-            if pad >= 3:
-                marker = '-' * (pad - 3) + '-> '
-            elif pad == 2:
-                marker = '> '
-            elif pad == 1:
-                marker = '>'
-            else:
-                marker = ''
-            num = marker + str(i)
-            line = '%s%s%s %s%s' % (Colors.linenoEm, num,
-                                    Colors.line, line, Colors.Normal)
+            pad = numbers_width - len(str(lineno))
+            num = '%s%s' % (debugger.make_arrow(pad), str(lineno))
+            start_color = Colors.linenoEm
         else:
-            num = '%*s' % (numbers_width, i)
-            line = '%s%s%s %s' % (Colors.lineno, num,
-                                  Colors.Normal, line)
+            num = '%*s' % (numbers_width, lineno)
+            start_color = Colors.lineno
+        
+        line = '%s%s%s %s' % (start_color, num, Colors.Normal, line)
 
         res.append(line)
-        if lvals and i == lnum:
+        if lvals and stack_line.is_current:
             res.append(lvals + '\n')
-        i = i + 1
     return res
 
 
 #---------------------------------------------------------------------------
 # Module classes
-class TBTools(object):
+class TBTools(colorable.Colorable):
     """Basic tools used by all traceback printer classes."""
 
     # Number of frames to skip when reporting tracebacks
     tb_offset = 0
 
-    def __init__(self, color_scheme='NoColor', call_pdb=False, ostream=None):
+    def __init__(self, color_scheme='NoColor', call_pdb=False, ostream=None, parent=None, config=None):
         # Whether to call the interactive pdb debugger after printing
         # tracebacks or not
+        super(TBTools, self).__init__(parent=parent, config=config)
         self.call_pdb = call_pdb
 
         # Output stream to write to.  Note that we store the original value in
         # a private attribute and then make the public ostream a property, so
-        # that we can delay accessing io.stdout until runtime.  The way
-        # things are written now, the io.stdout object is dynamically managed
+        # that we can delay accessing sys.stdout until runtime.  The way
+        # things are written now, the sys.stdout object is dynamically managed
         # so a reference to it should NEVER be stored statically.  This
         # property approach confines this detail to a single location, and all
         # subclasses can simply access self.ostream for writing.
@@ -452,7 +200,7 @@ class TBTools(object):
         self.old_scheme = color_scheme  # save initial value for toggles
 
         if call_pdb:
-            self.pdb = debugger.Pdb(self.color_scheme_table.active_scheme_name)
+            self.pdb = debugger.Pdb()
         else:
             self.pdb = None
 
@@ -462,18 +210,46 @@ class TBTools(object):
         Valid values are:
 
         - None: the default, which means that IPython will dynamically resolve
-          to io.stdout.  This ensures compatibility with most tools, including
+          to sys.stdout.  This ensures compatibility with most tools, including
           Windows (where plain stdout doesn't recognize ANSI escapes).
 
         - Any object with 'write' and 'flush' attributes.
         """
-        return io.stdout if self._ostream is None else self._ostream
+        return sys.stdout if self._ostream is None else self._ostream
 
     def _set_ostream(self, val):
         assert val is None or (hasattr(val, 'write') and hasattr(val, 'flush'))
         self._ostream = val
 
     ostream = property(_get_ostream, _set_ostream)
+
+    def get_parts_of_chained_exception(self, evalue):
+        def get_chained_exception(exception_value):
+            cause = getattr(exception_value, '__cause__', None)
+            if cause:
+                return cause
+            if getattr(exception_value, '__suppress_context__', False):
+                return None
+            return getattr(exception_value, '__context__', None)
+
+        chained_evalue = get_chained_exception(evalue)
+
+        if chained_evalue:
+            return chained_evalue.__class__, chained_evalue, chained_evalue.__traceback__
+
+    def prepare_chained_exception_message(self, cause):
+        direct_cause = "\nThe above exception was the direct cause of the following exception:\n"
+        exception_during_handling = "\nDuring handling of the above exception, another exception occurred:\n"
+
+        if cause:
+            message = [[direct_cause]]
+        else:
+            message = [[exception_during_handling]]
+        return message
+
+    @property
+    def has_colors(self):
+        return self.color_scheme_table.active_scheme_name.lower() != "nocolor"
 
     def set_colors(self, *args, **kw):
         """Shorthand access to the color table scheme selector method."""
@@ -539,16 +315,22 @@ class ListTB(TBTools):
     Because they are meant to be called without a full traceback (only a
     list), instances of this class can't call the interactive pdb debugger."""
 
-    def __init__(self, color_scheme='NoColor', call_pdb=False, ostream=None):
+    def __init__(self, color_scheme='NoColor', call_pdb=False, ostream=None, parent=None, config=None):
         TBTools.__init__(self, color_scheme=color_scheme, call_pdb=call_pdb,
-                         ostream=ostream)
+                         ostream=ostream, parent=parent,config=config)
 
     def __call__(self, etype, value, elist):
         self.ostream.flush()
         self.ostream.write(self.text(etype, value, elist))
         self.ostream.write('\n')
 
-    def structured_traceback(self, etype, value, elist, tb_offset=None,
+    def _extract_tb(self, tb):
+        if tb:
+            return traceback.extract_tb(tb)
+        else:
+            return None
+
+    def structured_traceback(self, etype, evalue, etb=None, tb_offset=None,
                              context=5):
         """Return a color formatted string with the traceback info.
 
@@ -557,15 +339,16 @@ class ListTB(TBTools):
         etype : exception type
           Type of the exception raised.
 
-        value : object
+        evalue : object
           Data stored in the exception
 
-        elist : list
-          List of frames, see class docstring for details.
+        etb : object
+          If list: List of frames, see class docstring for details.
+          If Traceback: Traceback of the exception.
 
         tb_offset : int, optional
           Number of frames in the traceback to skip.  If not given, the
-          instance value is used (set in constructor).
+          instance evalue is used (set in constructor).
 
         context : int, optional
           Number of lines of context information to print.
@@ -574,6 +357,19 @@ class ListTB(TBTools):
         -------
         String with formatted exception.
         """
+        # This is a workaround to get chained_exc_ids in recursive calls
+        # etb should not be a tuple if structured_traceback is not recursive
+        if isinstance(etb, tuple):
+            etb, chained_exc_ids = etb
+        else:
+            chained_exc_ids = set()
+
+        if isinstance(etb, list):
+            elist = etb
+        elif etb is not None:
+            elist = self._extract_tb(etb)
+        else:
+            elist = []
         tb_offset = self.tb_offset if tb_offset is None else tb_offset
         Colors = self.Colors
         out_list = []
@@ -586,18 +382,24 @@ class ListTB(TBTools):
                             (Colors.normalEm, Colors.Normal) + '\n')
             out_list.extend(self._format_list(elist))
         # The exception info should be a single entry in the list.
-        lines = ''.join(self._format_exception_only(etype, value))
+        lines = ''.join(self._format_exception_only(etype, evalue))
         out_list.append(lines)
 
-        # Note: this code originally read:
+        exception = self.get_parts_of_chained_exception(evalue)
 
-        ## for line in lines[:-1]:
-        ##     out_list.append(" "+line)
-        ## out_list.append(lines[-1])
-
-        # This means it was indenting everything but the last line by a little
-        # bit.  I've disabled this for now, but if we see ugliness somewhere we
-        # can restore it.
+        if exception and not id(exception[1]) in chained_exc_ids:
+            chained_exception_message = self.prepare_chained_exception_message(
+                evalue.__cause__)[0]
+            etype, evalue, etb = exception
+            # Trace exception to avoid infinite 'cause' loop
+            chained_exc_ids.add(id(exception[1]))
+            chained_exceptions_tb_offset = 0
+            out_list = (
+                self.structured_traceback(
+                    etype, evalue, (etb, chained_exc_ids),
+                    chained_exceptions_tb_offset, context)
+                + chained_exception_message
+                + out_list)
 
         return out_list
 
@@ -618,9 +420,9 @@ class ListTB(TBTools):
         list = []
         for filename, lineno, name, line in extracted_list[:-1]:
             item = '  File %s"%s"%s, line %s%d%s, in %s%s%s\n' % \
-                   (Colors.filename, py3compat.cast_unicode_py2(filename, "utf-8"), Colors.Normal,
+                   (Colors.filename, filename, Colors.Normal,
                     Colors.lineno, lineno, Colors.Normal,
-                    Colors.name, py3compat.cast_unicode_py2(name, "utf-8"), Colors.Normal)
+                    Colors.name, name, Colors.Normal)
             if line:
                 item += '    %s\n' % line.strip()
             list.append(item)
@@ -628,9 +430,9 @@ class ListTB(TBTools):
         filename, lineno, name, line = extracted_list[-1]
         item = '%s  File %s"%s"%s, line %s%d%s, in %s%s%s%s\n' % \
                (Colors.normalEm,
-                Colors.filenameEm, py3compat.cast_unicode_py2(filename, "utf-8"), Colors.normalEm,
+                Colors.filenameEm, filename, Colors.normalEm,
                 Colors.linenoEm, lineno, Colors.normalEm,
-                Colors.nameEm, py3compat.cast_unicode_py2(name, "utf-8"), Colors.normalEm,
+                Colors.nameEm, name, Colors.normalEm,
                 Colors.Normal)
         if line:
             item += '%s    %s%s\n' % (Colors.line, line.strip(),
@@ -654,17 +456,17 @@ class ListTB(TBTools):
         have_filedata = False
         Colors = self.Colors
         list = []
-        stype = Colors.excName + etype.__name__ + Colors.Normal
+        stype = py3compat.cast_unicode(Colors.excName + etype.__name__ + Colors.Normal)
         if value is None:
             # Not sure if this can still happen in Python 2.6 and above
-            list.append(py3compat.cast_unicode(stype) + '\n')
+            list.append(stype + '\n')
         else:
             if issubclass(etype, SyntaxError):
                 have_filedata = True
                 if not value.filename: value.filename = "<string>"
                 if value.lineno:
                     lineno = value.lineno
-                    textline = ulinecache.getline(value.filename, value.lineno)
+                    textline = linecache.getline(value.filename, value.lineno)
                 else:
                     lineno = 'unknown'
                     textline = ''
@@ -697,10 +499,10 @@ class ListTB(TBTools):
             except Exception:
                 s = self._some_str(value)
             if s:
-                list.append('%s%s:%s %s\n' % (str(stype), Colors.excName,
+                list.append('%s%s:%s %s\n' % (stype, Colors.excName,
                                               Colors.Normal, s))
             else:
-                list.append('%s\n' % str(stype))
+                list.append('%s\n' % stype)
 
         # sync with user hooks
         if have_filedata:
@@ -718,7 +520,7 @@ class ListTB(TBTools):
         etype : exception type
         value : exception value
         """
-        return ListTB.structured_traceback(self, etype, value, [])
+        return ListTB.structured_traceback(self, etype, value)
 
     def show_exception_only(self, etype, evalue):
         """Only print the exception type and message, without a traceback.
@@ -738,9 +540,9 @@ class ListTB(TBTools):
     def _some_str(self, value):
         # Lifted from traceback.py
         try:
-            return str(value)
+            return py3compat.cast_unicode(str(value))
         except:
-            return '<unprintable %s object>' % type(value).__name__
+            return u'<unprintable %s object>' % type(value).__name__
 
 
 #----------------------------------------------------------------------------
@@ -754,7 +556,8 @@ class VerboseTB(TBTools):
 
     def __init__(self, color_scheme='Linux', call_pdb=False, ostream=None,
                  tb_offset=0, long_header=False, include_vars=True,
-                 check_cache=None):
+                 check_cache=None, debugger_cls = None,
+                 parent=None, config=None):
         """Specify traceback offset, headers and color scheme.
 
         Define how many frames to drop from the tracebacks. Calling it with
@@ -762,7 +565,7 @@ class VerboseTB(TBTools):
         their own code at the top of the traceback (VerboseTB will first
         remove that frame before printing the traceback info)."""
         TBTools.__init__(self, color_scheme=color_scheme, call_pdb=call_pdb,
-                         ostream=ostream)
+                         ostream=ostream, parent=parent, config=config)
         self.tb_offset = tb_offset
         self.long_header = long_header
         self.include_vars = include_vars
@@ -775,216 +578,99 @@ class VerboseTB(TBTools):
             check_cache = linecache.checkcache
         self.check_cache = check_cache
 
-    def format_records(self, records):
+        self.debugger_cls = debugger_cls or debugger.Pdb
+
+    def format_record(self, frame_info):
+        """Format a single stack frame"""
         Colors = self.Colors  # just a shorthand + quicker name lookup
         ColorsNormal = Colors.Normal  # used a lot
-        col_scheme = self.color_scheme_table.active_scheme_name
+
+        if isinstance(frame_info, stack_data.RepeatedFrames):
+            return '    %s[... skipping similar frames: %s]%s\n' % (
+                Colors.excName, frame_info.description, ColorsNormal)
+
         indent = ' ' * INDENT_SIZE
         em_normal = '%s\n%s%s' % (Colors.valEm, indent, ColorsNormal)
-        undefined = '%sundefined%s' % (Colors.em, ColorsNormal)
-        frames = []
-        # build some color string templates outside these nested loops
         tpl_link = '%s%%s%s' % (Colors.filenameEm, ColorsNormal)
         tpl_call = 'in %s%%s%s%%s%s' % (Colors.vName, Colors.valEm,
                                         ColorsNormal)
         tpl_call_fail = 'in %s%%s%s(***failed resolving arguments***)%s' % \
                         (Colors.vName, Colors.valEm, ColorsNormal)
         tpl_local_var = '%s%%s%s' % (Colors.vName, ColorsNormal)
-        tpl_global_var = '%sglobal%s %s%%s%s' % (Colors.em, ColorsNormal,
-                                                 Colors.vName, ColorsNormal)
         tpl_name_val = '%%s %s= %%s%s' % (Colors.valEm, ColorsNormal)
 
-        tpl_line = '%s%%s%s %%s' % (Colors.lineno, ColorsNormal)
-        tpl_line_em = '%s%%s%s %%s%s' % (Colors.linenoEm, Colors.line,
-                                         ColorsNormal)
+        file = frame_info.filename
+        file = py3compat.cast_unicode(file, util_path.fs_encoding)
+        link = tpl_link % util_path.compress_user(file)
+        args, varargs, varkw, locals_ = inspect.getargvalues(frame_info.frame)
 
-        abspath = os.path.abspath
-        for frame, file, lnum, func, lines, index in records:
-            #print '*** record:',file,lnum,func,lines,index  # dbg
-            if not file:
-                file = '?'
-            elif file.startswith(str("<")) and file.endswith(str(">")):
-                # Not a real filename, no problem...
-                pass
-            elif not os.path.isabs(file):
-                # Try to make the filename absolute by trying all
-                # sys.path entries (which is also what linecache does)
-                for dirname in sys.path:
-                    try:
-                        fullname = os.path.join(dirname, file)
-                        if os.path.isfile(fullname):
-                            file = os.path.abspath(fullname)
-                            break
-                    except Exception:
-                        # Just in case that sys.path contains very
-                        # strange entries...
-                        pass
-
-            file = py3compat.cast_unicode(file, util_path.fs_encoding)
-            link = tpl_link % file
-            args, varargs, varkw, locals = fixed_getargvalues(frame)
-
-            if func == '?':
-                call = ''
-            else:
-                # Decide whether to include variable details or not
-                var_repr = self.include_vars and eqrepr or nullrepr
-                try:
-                    call = tpl_call % (func, inspect.formatargvalues(args,
-                                                                     varargs, varkw,
-                                                                     locals, formatvalue=var_repr))
-                except KeyError:
-                    # This happens in situations like errors inside generator
-                    # expressions, where local variables are listed in the
-                    # line, but can't be extracted from the frame.  I'm not
-                    # 100% sure this isn't actually a bug in inspect itself,
-                    # but since there's no info for us to compute with, the
-                    # best we can do is report the failure and move on.  Here
-                    # we must *not* call any traceback construction again,
-                    # because that would mess up use of %debug later on.  So we
-                    # simply report the failure and move on.  The only
-                    # limitation will be that this frame won't have locals
-                    # listed in the call signature.  Quite subtle problem...
-                    # I can't think of a good way to validate this in a unit
-                    # test, but running a script consisting of:
-                    #  dict( (k,v.strip()) for (k,v) in range(10) )
-                    # will illustrate the error, if this exception catch is
-                    # disabled.
-                    call = tpl_call_fail % func
-
-            # Don't attempt to tokenize binary files.
-            if file.endswith(('.so', '.pyd', '.dll')):
-                frames.append('%s %s\n' % (link, call))
-                continue
-            elif file.endswith(('.pyc', '.pyo')):
-                # Look up the corresponding source file.
-                file = openpy.source_from_cache(file)
-
-            def linereader(file=file, lnum=[lnum], getline=ulinecache.getline):
-                line = getline(file, lnum[0])
-                lnum[0] += 1
-                return line
-
-            # Build the list of names on this line of code where the exception
-            # occurred.
-            try:
-                names = []
-                name_cont = False
-
-                for token_type, token, start, end, line in generate_tokens(linereader):
-                    # build composite names
-                    if token_type == tokenize.NAME and token not in keyword.kwlist:
-                        if name_cont:
-                            # Continuation of a dotted name
-                            try:
-                                names[-1].append(token)
-                            except IndexError:
-                                names.append([token])
-                            name_cont = False
-                        else:
-                            # Regular new names.  We append everything, the caller
-                            # will be responsible for pruning the list later.  It's
-                            # very tricky to try to prune as we go, b/c composite
-                            # names can fool us.  The pruning at the end is easy
-                            # to do (or the caller can print a list with repeated
-                            # names if so desired.
-                            names.append([token])
-                    elif token == '.':
-                        name_cont = True
-                    elif token_type == tokenize.NEWLINE:
-                        break
-
-            except (IndexError, UnicodeDecodeError, SyntaxError):
-                # signals exit of tokenizer
-                # SyntaxError can occur if the file is not actually Python
-                #  - see gh-6300
-                pass
-            except tokenize.TokenError as msg:
-                _m = ("An unexpected error occurred while tokenizing input\n"
-                      "The following traceback may be corrupted or invalid\n"
-                      "The error message is: %s\n" % msg)
-                error(_m)
-
-            # Join composite names (e.g. "dict.fromkeys")
-            names = ['.'.join(n) for n in names]
-            # prune names list of duplicates, but keep the right order
-            unique_names = uniq_stable(names)
-
-            # Start loop over vars
-            lvals = []
-            if self.include_vars:
-                for name_full in unique_names:
-                    name_base = name_full.split('.', 1)[0]
-                    if name_base in frame.f_code.co_varnames:
-                        if name_base in locals:
-                            try:
-                                value = repr(eval(name_full, locals))
-                            except:
-                                value = undefined
-                        else:
-                            value = undefined
-                        name = tpl_local_var % name_full
-                    else:
-                        if name_base in frame.f_globals:
-                            try:
-                                value = repr(eval(name_full, frame.f_globals))
-                            except:
-                                value = undefined
-                        else:
-                            value = undefined
-                        name = tpl_global_var % name_full
-                    lvals.append(tpl_name_val % (name, value))
-            if lvals:
-                lvals = '%s%s' % (indent, em_normal.join(lvals))
-            else:
-                lvals = ''
-
-            level = '%s %s\n' % (link, call)
-
-            if index is None:
-                frames.append(level)
-            else:
-                frames.append('%s%s' % (level, ''.join(
-                    _format_traceback_lines(lnum, index, lines, Colors, lvals,
-                                            col_scheme))))
-
-        return frames
-
-    def prepare_chained_exception_message(self, cause):
-        direct_cause = "\nThe above exception was the direct cause of the following exception:\n"
-        exception_during_handling = "\nDuring handling of the above exception, another exception occurred:\n"
-
-        if cause:
-            message = [[direct_cause]]
+        func = frame_info.executing.code_qualname()
+        if func == '<module>':
+            call = tpl_call % (func, '')
         else:
-            message = [[exception_during_handling]]
-        return message
+            # Decide whether to include variable details or not
+            var_repr = eqrepr if self.include_vars else nullrepr
+            try:
+                call = tpl_call % (func, inspect.formatargvalues(args,
+                                                                 varargs, varkw,
+                                                                 locals_, formatvalue=var_repr))
+            except KeyError:
+                # This happens in situations like errors inside generator
+                # expressions, where local variables are listed in the
+                # line, but can't be extracted from the frame.  I'm not
+                # 100% sure this isn't actually a bug in inspect itself,
+                # but since there's no info for us to compute with, the
+                # best we can do is report the failure and move on.  Here
+                # we must *not* call any traceback construction again,
+                # because that would mess up use of %debug later on.  So we
+                # simply report the failure and move on.  The only
+                # limitation will be that this frame won't have locals
+                # listed in the call signature.  Quite subtle problem...
+                # I can't think of a good way to validate this in a unit
+                # test, but running a script consisting of:
+                #  dict( (k,v.strip()) for (k,v) in range(10) )
+                # will illustrate the error, if this exception catch is
+                # disabled.
+                call = tpl_call_fail % func
+
+        lvals = ''
+        lvals_list = []
+        if self.include_vars:
+            for var in frame_info.variables_in_executing_piece:
+                lvals_list.append(tpl_name_val % (var.name, repr(var.value)))
+        if lvals_list:
+            lvals = '%s%s' % (indent, em_normal.join(lvals_list))
+
+        result = '%s %s\n' % (link, call)
+
+        result += ''.join(_format_traceback_lines(frame_info.lines, Colors, self.has_colors, lvals))
+        return result
 
     def prepare_header(self, etype, long_version=False):
         colors = self.Colors  # just a shorthand + quicker name lookup
         colorsnormal = colors.Normal  # used a lot
         exc = '%s%s%s' % (colors.excName, etype, colorsnormal)
+        width = min(75, get_terminal_size()[0])
         if long_version:
             # Header with the exception type, python version, and date
             pyver = 'Python ' + sys.version.split()[0] + ': ' + sys.executable
             date = time.ctime(time.time())
 
-            head = '%s%s%s\n%s%s%s\n%s' % (colors.topline, '-' * 75, colorsnormal,
-                                           exc, ' ' * (75 - len(str(etype)) - len(pyver)),
-                                           pyver, date.rjust(75) )
+            head = '%s%s%s\n%s%s%s\n%s' % (colors.topline, '-' * width, colorsnormal,
+                                           exc, ' ' * (width - len(str(etype)) - len(pyver)),
+                                           pyver, date.rjust(width) )
             head += "\nA problem occurred executing Python code.  Here is the sequence of function" \
                     "\ncalls leading up to the error, with the most recent (innermost) call last."
         else:
             # Simplified header
             head = '%s%s' % (exc, 'Traceback (most recent call last)'. \
-                             rjust(75 - len(str(etype))) )
+                             rjust(width - len(str(etype))) )
 
         return head
 
     def format_exception(self, etype, evalue):
         colors = self.Colors  # just a shorthand + quicker name lookup
         colorsnormal = colors.Normal  # used a lot
-        indent = ' ' * INDENT_SIZE
         # Get (safely) a string form of the exception info
         try:
             etype_str, evalue_str = map(str, (etype, evalue))
@@ -993,30 +679,17 @@ class VerboseTB(TBTools):
             etype, evalue = str, sys.exc_info()[:2]
             etype_str, evalue_str = map(str, (etype, evalue))
         # ... and format it
-        exception = ['%s%s%s: %s' % (colors.excName, etype_str,
-                                     colorsnormal, py3compat.cast_unicode(evalue_str))]
-
-        if (not py3compat.PY3) and type(evalue) is types.InstanceType:
-            try:
-                names = [w for w in dir(evalue) if isinstance(w, py3compat.string_types)]
-            except:
-                # Every now and then, an object with funny internals blows up
-                # when dir() is called on it.  We do the best we can to report
-                # the problem and continue
-                _m = '%sException reporting error (object with broken dir())%s:'
-                exception.append(_m % (colors.excName, colorsnormal))
-                etype_str, evalue_str = map(str, sys.exc_info()[:2])
-                exception.append('%s%s%s: %s' % (colors.excName, etype_str,
-                                                 colorsnormal, py3compat.cast_unicode(evalue_str)))
-                names = []
-            for name in names:
-                value = text_repr(getattr(evalue, name))
-                exception.append('\n%s%s = %s' % (indent, name, value))
-
-        return exception
+        return ['%s%s%s: %s' % (colors.excName, etype_str,
+                                colorsnormal, py3compat.cast_unicode(evalue_str))]
 
     def format_exception_as_a_whole(self, etype, evalue, etb, number_of_lines_of_context, tb_offset):
+        """Formats the header, traceback and exception message for a single exception.
+
+        This may be called multiple times by Python 3 exception chaining
+        (PEP 3134).
+        """
         # some locals
+        orig_etype = etype
         try:
             etype = etype.__name__
         except AttributeError:
@@ -1026,52 +699,33 @@ class VerboseTB(TBTools):
         head = self.prepare_header(etype, self.long_header)
         records = self.get_records(etb, number_of_lines_of_context, tb_offset)
 
-        if records is None:
-            return ""
-
-        frames = self.format_records(records)
+        frames = list(map(self.format_record, records))
 
         formatted_exception = self.format_exception(etype, evalue)
         if records:
-            filepath, lnum = records[-1][1:3]
-            filepath = os.path.abspath(filepath)
+            frame_info = records[-1]
             ipinst = get_ipython()
             if ipinst is not None:
-                ipinst.hooks.synchronize_with_editor(filepath, lnum, 0)
+                ipinst.hooks.synchronize_with_editor(frame_info.filename, frame_info.lineno, 0)
 
         return [[head] + frames + [''.join(formatted_exception[0])]]
 
     def get_records(self, etb, number_of_lines_of_context, tb_offset):
-        try:
-            # Try the default getinnerframes and Alex's: Alex's fixes some
-            # problems, but it generates empty tracebacks for console errors
-            # (5 blanks lines) where none should be returned.
-            return _fixed_getinnerframes(etb, number_of_lines_of_context, tb_offset)
-        except:
-            # FIXME: I've been getting many crash reports from python 2.3
-            # users, traceable to inspect.py.  If I can find a small test-case
-            # to reproduce this, I should either write a better workaround or
-            # file a bug report against inspect (if that's the real problem).
-            # So far, I haven't been able to find an isolated example to
-            # reproduce the problem.
-            inspect_error()
-            traceback.print_exc(file=self.ostream)
-            info('\nUnfortunately, your original traceback can not be constructed.\n')
-            return None
-
-    def get_parts_of_chained_exception(self, evalue):
-        def get_chained_exception(exception_value):
-            cause = getattr(exception_value, '__cause__', None)
-            if cause:
-                return cause
-            if getattr(exception_value, '__suppress_context__', False):
-                return None
-            return getattr(exception_value, '__context__', None)
-
-        chained_evalue = get_chained_exception(evalue)
-
-        if chained_evalue:
-            return chained_evalue.__class__, chained_evalue, chained_evalue.__traceback__
+        context = number_of_lines_of_context - 1
+        after = context // 2
+        before = context - after
+        if self.has_colors:
+            style = get_style_by_name('default')
+            style = stack_data.style_with_executing_node(style, 'bg:#00005f')
+            formatter = Terminal256Formatter(style=style)
+        else:
+            formatter = None
+        options = stack_data.Options(
+            before=before,
+            after=after,
+            pygments_formatter=formatter,
+        )
+        return list(stack_data.FrameInfo.stack_data(etb, options=options))[tb_offset:]
 
     def structured_traceback(self, etype, evalue, etb, tb_offset=None,
                              number_of_lines_of_context=5):
@@ -1082,35 +736,34 @@ class VerboseTB(TBTools):
 
         colors = self.Colors  # just a shorthand + quicker name lookup
         colorsnormal = colors.Normal  # used a lot
-        head = '%s%s%s' % (colors.topline, '-' * 75, colorsnormal)
+        head = '%s%s%s' % (colors.topline, '-' * min(75, get_terminal_size()[0]), colorsnormal)
         structured_traceback_parts = [head]
-        if py3compat.PY3:
-            chained_exceptions_tb_offset = 0
-            lines_of_context = 3
-            formatted_exceptions = formatted_exception
+        chained_exceptions_tb_offset = 0
+        lines_of_context = 3
+        formatted_exceptions = formatted_exception
+        exception = self.get_parts_of_chained_exception(evalue)
+        if exception:
+            formatted_exceptions += self.prepare_chained_exception_message(evalue.__cause__)
+            etype, evalue, etb = exception
+        else:
+            evalue = None
+        chained_exc_ids = set()
+        while evalue:
+            formatted_exceptions += self.format_exception_as_a_whole(etype, evalue, etb, lines_of_context,
+                                                                     chained_exceptions_tb_offset)
             exception = self.get_parts_of_chained_exception(evalue)
-            if exception:
+
+            if exception and not id(exception[1]) in chained_exc_ids:
+                chained_exc_ids.add(id(exception[1])) # trace exception to avoid infinite 'cause' loop
                 formatted_exceptions += self.prepare_chained_exception_message(evalue.__cause__)
                 etype, evalue, etb = exception
             else:
                 evalue = None
-            while evalue:
-                formatted_exceptions += self.format_exception_as_a_whole(etype, evalue, etb, lines_of_context,
-                                                                         chained_exceptions_tb_offset)
-                exception = self.get_parts_of_chained_exception(evalue)
 
-                if exception:
-                    formatted_exceptions += self.prepare_chained_exception_message(evalue.__cause__)
-                    etype, evalue, etb = exception
-                else:
-                    evalue = None
-
-            # we want to see exceptions in a reversed order:
-            # the first exception should be on top
-            for formatted_exception in reversed(formatted_exceptions):
-                structured_traceback_parts += formatted_exception
-        else:
-            structured_traceback_parts += formatted_exception[0]
+        # we want to see exceptions in a reversed order:
+        # the first exception should be on top
+        for formatted_exception in reversed(formatted_exceptions):
+            structured_traceback_parts += formatted_exception
 
         return structured_traceback_parts
 
@@ -1136,8 +789,7 @@ class VerboseTB(TBTools):
 
         if force or self.call_pdb:
             if self.pdb is None:
-                self.pdb = debugger.Pdb(
-                    self.color_scheme_table.active_scheme_name)
+                self.pdb = self.debugger_cls()
             # the system displayhook may have changed, restore the original
             # for pdb
             display_trap = DisplayTrap(hook=sys.__displayhook__)
@@ -1153,7 +805,7 @@ class VerboseTB(TBTools):
                 if etb and etb.tb_next:
                     etb = etb.tb_next
                 self.pdb.botframe = etb.tb_frame
-                self.pdb.interaction(self.tb.tb_frame, self.tb)
+                self.pdb.interaction(None, etb)
 
         if hasattr(self, 'tb'):
             del self.tb
@@ -1197,28 +849,25 @@ class FormattedTB(VerboseTB, ListTB):
     def __init__(self, mode='Plain', color_scheme='Linux', call_pdb=False,
                  ostream=None,
                  tb_offset=0, long_header=False, include_vars=False,
-                 check_cache=None):
+                 check_cache=None, debugger_cls=None,
+                 parent=None, config=None):
 
         # NEVER change the order of this list. Put new modes at the end:
-        self.valid_modes = ['Plain', 'Context', 'Verbose']
+        self.valid_modes = ['Plain', 'Context', 'Verbose', 'Minimal']
         self.verbose_modes = self.valid_modes[1:3]
 
         VerboseTB.__init__(self, color_scheme=color_scheme, call_pdb=call_pdb,
                            ostream=ostream, tb_offset=tb_offset,
                            long_header=long_header, include_vars=include_vars,
-                           check_cache=check_cache)
+                           check_cache=check_cache, debugger_cls=debugger_cls,
+                           parent=parent, config=config)
 
         # Different types of tracebacks are joined with different separators to
         # form a single string.  They are taken from this dict
-        self._join_chars = dict(Plain='', Context='\n', Verbose='\n')
+        self._join_chars = dict(Plain='', Context='\n', Verbose='\n',
+                                Minimal='')
         # set_mode also sets the tb_join_char attribute
         self.set_mode(mode)
-
-    def _extract_tb(self, tb):
-        if tb:
-            return traceback.extract_tb(tb)
-        else:
-            return None
 
     def structured_traceback(self, etype, value, tb, tb_offset=None, number_of_lines_of_context=5):
         tb_offset = self.tb_offset if tb_offset is None else tb_offset
@@ -1228,14 +877,15 @@ class FormattedTB(VerboseTB, ListTB):
             return VerboseTB.structured_traceback(
                 self, etype, value, tb, tb_offset, number_of_lines_of_context
             )
+        elif mode == 'Minimal':
+            return ListTB.get_exception_only(self, etype, value)
         else:
             # We must check the source cache because otherwise we can print
             # out-of-date source code.
             self.check_cache()
             # Now we can extract and format the exception
-            elist = self._extract_tb(tb)
             return ListTB.structured_traceback(
-                self, etype, value, elist, tb_offset, number_of_lines_of_context
+                self, etype, value, tb, tb_offset, number_of_lines_of_context
             )
 
     def stb2text(self, stb):
@@ -1271,6 +921,9 @@ class FormattedTB(VerboseTB, ListTB):
 
     def verbose(self):
         self.set_mode(self.valid_modes[2])
+
+    def minimal(self):
+        self.set_mode(self.valid_modes[3])
 
 
 #----------------------------------------------------------------------------
@@ -1316,7 +969,11 @@ class AutoFormattedTB(FormattedTB):
                              tb_offset=None, number_of_lines_of_context=5):
         if etype is None:
             etype, value, tb = sys.exc_info()
-        self.tb = tb
+        if isinstance(tb, tuple):
+            # tb is a tuple if this is a chained exception.
+            self.tb = tb[0]
+        else:
+            self.tb = tb
         return FormattedTB.structured_traceback(
             self, etype, value, tb, tb_offset, number_of_lines_of_context)
 
@@ -1335,8 +992,8 @@ class ColorTB(FormattedTB):
 class SyntaxTB(ListTB):
     """Extension which holds some state: the last exception value"""
 
-    def __init__(self, color_scheme='NoColor'):
-        ListTB.__init__(self, color_scheme)
+    def __init__(self, color_scheme='NoColor', parent=None, config=None):
+        ListTB.__init__(self, color_scheme, parent=parent, config=config)
         self.last_syntax_error = None
 
     def __call__(self, etype, value, elist):
@@ -1350,12 +1007,13 @@ class SyntaxTB(ListTB):
         # be wrong (retrieved from an outdated cache). This replaces it with
         # the current value.
         if isinstance(value, SyntaxError) \
-                and isinstance(value.filename, py3compat.string_types) \
+                and isinstance(value.filename, str) \
                 and isinstance(value.lineno, int):
             linecache.checkcache(value.filename)
-            newtext = ulinecache.getline(value.filename, value.lineno)
+            newtext = linecache.getline(value.filename, value.lineno)
             if newtext:
                 value.text = newtext
+        self.last_syntax_error = value
         return super(SyntaxTB, self).structured_traceback(etype, value, elist,
                                                           tb_offset=tb_offset, context=context)
 

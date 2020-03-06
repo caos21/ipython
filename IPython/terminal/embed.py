@@ -5,45 +5,106 @@ An embedded IPython shell.
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-from __future__ import with_statement
-from __future__ import print_function
 
 import sys
 import warnings
 
 from IPython.core import ultratb, compilerop
+from IPython.core import magic_arguments
 from IPython.core.magic import Magics, magics_class, line_magic
-from IPython.core.interactiveshell import DummyMod
-from IPython.core.interactiveshell import InteractiveShell
+from IPython.core.interactiveshell import DummyMod, InteractiveShell
 from IPython.terminal.interactiveshell import TerminalInteractiveShell
 from IPython.terminal.ipapp import load_default_config
 
 from traitlets import Bool, CBool, Unicode
 from IPython.utils.io import ask_yes_no
 
+class KillEmbedded(Exception):pass
+
+# kept for backward compatibility as IPython 6 was released with
+# the typo. See https://github.com/ipython/ipython/pull/10706
+KillEmbeded = KillEmbedded
 
 # This is an additional magic that is exposed in embedded shells.
 @magics_class
 class EmbeddedMagics(Magics):
 
     @line_magic
+    @magic_arguments.magic_arguments()
+    @magic_arguments.argument('-i', '--instance', action='store_true',
+                              help='Kill instance instead of call location')
+    @magic_arguments.argument('-x', '--exit', action='store_true',
+                              help='Also exit the current session')
+    @magic_arguments.argument('-y', '--yes', action='store_true',
+                              help='Do not ask confirmation')
     def kill_embedded(self, parameter_s=''):
-        """%kill_embedded : deactivate for good the current embedded IPython.
+        """%kill_embedded : deactivate for good the current embedded IPython
 
         This function (after asking for confirmation) sets an internal flag so
-        that an embedded IPython will never activate again.  This is useful to
-        permanently disable a shell that is being called inside a loop: once
-        you've figured out what you needed from it, you may then kill it and
-        the program will then continue to run without the interactive shell
-        interfering again.
+        that an embedded IPython will never activate again for the given call
+        location. This is useful to permanently disable a shell that is being
+        called inside a loop: once you've figured out what you needed from it,
+        you may then kill it and the program will then continue to run without
+        the interactive shell interfering again.
+
+
+        Kill Instance Option:
+
+            If for some reasons you need to kill the location where the instance
+            is created and not called, for example if you create a single
+            instance in one place and debug in many locations, you can use the
+            ``--instance`` option to kill this specific instance. Like for the
+            ``call location`` killing an "instance" should work even if it is
+            recreated within a loop.
+
+        .. note::
+
+            This was the default behavior before IPython 5.2
+
         """
 
-        kill = ask_yes_no("Are you sure you want to kill this embedded instance "
-                         "(y/n)? [y/N] ",'n')
-        if kill:
-            self.shell.embedded_active = False
-            print ("This embedded IPython will not reactivate anymore "
-                   "once you exit.")
+        args = magic_arguments.parse_argstring(self.kill_embedded, parameter_s)
+        print(args)
+        if args.instance:
+            # let no ask
+            if not args.yes:
+                kill = ask_yes_no(
+                    "Are you sure you want to kill this embedded instance? [y/N] ", 'n')
+            else:
+                kill = True
+            if kill:
+                self.shell._disable_init_location()
+                print("This embedded IPython instance will not reactivate anymore "
+                      "once you exit.")
+        else:
+            if not args.yes:
+                kill = ask_yes_no(
+                    "Are you sure you want to kill this embedded call_location? [y/N] ", 'n')
+            else:
+                kill = True
+            if kill:
+                self.shell.embedded_active = False
+                print("This embedded IPython  call location will not reactivate anymore "
+                      "once you exit.")
+
+        if args.exit:
+            # Ask-exit does not really ask, it just set internals flags to exit
+            # on next loop.
+            self.shell.ask_exit()
+
+
+    @line_magic
+    def exit_raise(self, parameter_s=''):
+        """%exit_raise Make the current embedded kernel exit and raise and exception.
+
+        This function sets an internal flag so that an embedded IPython will
+        raise a `IPython.terminal.embed.KillEmbedded` Exception on exit, and then exit the current I. This is
+        useful to permanently exit a loop that create IPython embed instance.
+        """
+
+        self.shell.should_raise = True
+        self.shell.ask_exit()
+
 
 
 class InteractiveShellEmbed(TerminalInteractiveShell):
@@ -51,19 +112,49 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
     dummy_mode = Bool(False)
     exit_msg = Unicode('')
     embedded = CBool(True)
-    embedded_active = CBool(True)
+    should_raise = CBool(False)
     # Like the base class display_banner is not configurable, but here it
     # is True by default.
     display_banner = CBool(True)
     exit_msg = Unicode()
-    
+
+    # When embedding, by default we don't change the terminal title
+    term_title = Bool(False,
+        help="Automatically set the terminal title"
+    ).tag(config=True)
+
+    _inactive_locations = set()
+
+    @property
+    def embedded_active(self):
+        return (self._call_location_id not in InteractiveShellEmbed._inactive_locations)\
+            and (self._init_location_id not in InteractiveShellEmbed._inactive_locations)
+
+    def _disable_init_location(self):
+        """Disable the current Instance creation location"""
+        InteractiveShellEmbed._inactive_locations.add(self._init_location_id)
+
+    @embedded_active.setter
+    def embedded_active(self, value):
+        if value:
+            InteractiveShellEmbed._inactive_locations.discard(
+                self._call_location_id)
+            InteractiveShellEmbed._inactive_locations.discard(
+                self._init_location_id)
+        else:
+            InteractiveShellEmbed._inactive_locations.add(
+                self._call_location_id)
 
     def __init__(self, **kw):
-        
-    
         if kw.get('user_global_ns', None) is not None:
-            warnings.warn("user_global_ns has been replaced by user_module. The\
-                           parameter will be ignored, and removed in IPython 5.0", DeprecationWarning)
+            raise DeprecationWarning(
+                "Key word argument `user_global_ns` has been replaced by `user_module` since IPython 4.0.")
+
+        clid = kw.pop('_init_location_id', None)
+        if not clid:
+            frame = sys._getframe(1)
+            clid = '%s:%s' % (frame.f_code.co_filename, frame.f_lineno)
+        self._init_location_id = clid
 
         super(InteractiveShellEmbed,self).__init__(**kw)
 
@@ -74,6 +165,9 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
                                              call_pdb=self.pdb)
 
     def init_sys_modules(self):
+        """
+        Explicitly overwrite :mod:`IPython.core.interactiveshell` to do nothing.
+        """
         pass
 
     def init_magics(self):
@@ -81,7 +175,7 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
         self.register_magics(EmbeddedMagics)
 
     def __call__(self, header='', local_ns=None, module=None, dummy=None,
-                 stack_depth=1, global_ns=None, compile_flags=None):
+                 stack_depth=1, global_ns=None, compile_flags=None, **kw):
         """Activate the interactive interpreter.
 
         __call__(self,header='',local_ns=None,module=None,dummy=None) -> Start
@@ -98,7 +192,16 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
         can still have a specific call work by making it as IPShell(dummy=False).
         """
 
+        # we are called, set the underlying interactiveshell not to exit.
+        self.keep_running = True
+
         # If the user has turned it off, go away
+        clid = kw.pop('_call_location_id', None)
+        if not clid:
+            frame = sys._getframe(1)
+            clid = '%s:%s' % (frame.f_code.co_filename, frame.f_lineno)
+        self._call_location_id = clid
+
         if not self.embedded_active:
             return
 
@@ -110,15 +213,15 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
         if dummy or (dummy != 0 and self.dummy_mode):
             return
 
-        if self.has_readline:
-            self.set_readline_completer()
-
         # self.banner is auto computed
         if header:
             self.old_banner2 = self.banner2
             self.banner2 = self.banner2 + '\n' + header + '\n'
         else:
             self.old_banner2 = ''
+
+        if self.display_banner:
+            self.show_banner()
 
         # Call the embedding code with a stack depth of 1 so it can skip over
         # our call and get the original caller's namespaces.
@@ -129,6 +232,10 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
 
         if self.exit_msg is not None:
             print(self.exit_msg)
+
+        if self.should_raise:
+            raise KillEmbedded('Embedded IPython raising error, as user requested.')
+
 
     def mainloop(self, local_ns=None, module=None, stack_depth=0,
                  display_banner=None, global_ns=None, compile_flags=None):
@@ -158,9 +265,10 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
         """
         
         if (global_ns is not None) and (module is None):
-            warnings.warn("global_ns is deprecated, and will be removed in IPython 5.0 use module instead.", DeprecationWarning)
-            module = DummyMod()
-            module.__dict__ = global_ns
+            raise DeprecationWarning("'global_ns' keyword argument is deprecated, and has been removed in IPython 5.0 use `module` keyword argument instead.")
+
+        if (display_banner is not None):
+            warnings.warn("The display_banner parameter is deprecated since IPython 4.0", DeprecationWarning)
 
         # Get locals and globals from caller
         if ((local_ns is None or module is None or compile_flags is None)
@@ -171,7 +279,14 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
                 local_ns = call_frame.f_locals
             if module is None:
                 global_ns = call_frame.f_globals
-                module = sys.modules[global_ns['__name__']]
+                try:
+                    module = sys.modules[global_ns['__name__']]
+                except KeyError:
+                    warnings.warn("Failed to get module %s" % \
+                        global_ns.get('__name__', 'unknown module')
+                    )
+                    module = DummyMod()
+                    module.__dict__ = global_ns
             if compile_flags is None:
                 compile_flags = (call_frame.f_code.co_flags &
                                  compilerop.PyCF_MASK)
@@ -206,7 +321,7 @@ class InteractiveShellEmbed(TerminalInteractiveShell):
         self.set_completer_frame()
 
         with self.builtin_trap, self.display_trap:
-            self.interact(display_banner=display_banner)
+            self.interact()
         
         # now, purge out the local namespace of IPython's hidden variables.
         if local_ns is not None:
@@ -251,6 +366,9 @@ def embed(**kwargs):
         config = load_default_config()
         config.InteractiveShellEmbed = config.TerminalInteractiveShell
         kwargs['config'] = config
+    using = kwargs.get('using', 'sync')
+    if using :
+        kwargs['config'].update({'TerminalInteractiveShell':{'loop_runner':using, 'colors':'NoColor', 'autoawait': using!='sync'}})
     #save ps1/ps2 if defined
     ps1 = None
     ps2 = None
@@ -264,8 +382,11 @@ def embed(**kwargs):
     if saved_shell_instance is not None:
         cls = type(saved_shell_instance)
         cls.clear_instance()
-    shell = InteractiveShellEmbed.instance(**kwargs)
-    shell(header=header, stack_depth=2, compile_flags=compile_flags)
+    frame = sys._getframe(1)
+    shell = InteractiveShellEmbed.instance(_init_location_id='%s:%s' % (
+        frame.f_code.co_filename, frame.f_lineno), **kwargs)
+    shell(header=header, stack_depth=2, compile_flags=compile_flags,
+        _call_location_id='%s:%s' % (frame.f_code.co_filename, frame.f_lineno))
     InteractiveShellEmbed.clear_instance()
     #restore previous instance
     if saved_shell_instance is not None:

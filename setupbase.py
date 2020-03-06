@@ -12,9 +12,8 @@ This includes:
 # Copyright (c) IPython Development Team.
 # Distributed under the terms of the Modified BSD License.
 
-from __future__ import print_function
 
-import errno
+import re
 import os
 import sys
 
@@ -24,10 +23,7 @@ from distutils.command.build_scripts import build_scripts
 from distutils.command.install import install
 from distutils.command.install_scripts import install_scripts
 from distutils.cmd import Command
-from distutils.errors import DistutilsExecError
-from fnmatch import fnmatch
 from glob import glob
-from subprocess import Popen, PIPE
 
 from setupext import install_data_ext
 
@@ -40,19 +36,10 @@ isfile = os.path.isfile
 pjoin = os.path.join
 repo_root = os.path.dirname(os.path.abspath(__file__))
 
-def oscmd(s):
-    print(">", s)
-    os.system(s)
-
-# Py3 compatibility hacks, without assuming IPython itself is installed with
-# the full py3compat machinery.
-
-try:
-    execfile
-except NameError:
-    def execfile(fname, globs, locs=None):
-        locs = locs or globs
-        exec(compile(open(fname).read(), fname, "exec"), globs, locs)
+def execfile(fname, globs, locs=None):
+    locs = locs or globs
+    with open(fname) as f:
+        exec(compile(f.read(), fname, "exec"), globs, locs)
 
 # A little utility we'll need below, since glob() does NOT allow you to do
 # exclusion on multiple endings!
@@ -83,12 +70,17 @@ setup_args = dict(
       author           = author,
       author_email     = author_email,
       url              = url,
-      download_url     = download_url,
       license          = license,
       platforms        = platforms,
       keywords         = keywords,
       classifiers      = classifiers,
       cmdclass         = {'install_data': install_data_ext},
+      project_urls={
+          'Documentation': 'https://ipython.readthedocs.io/',
+          'Funding'      : 'https://numfocus.org/',
+          'Source'       : 'https://github.com/ipython/ipython',
+          'Tracker'      : 'https://github.com/ipython/ipython/issues',
+      }
       )
 
 
@@ -163,43 +155,6 @@ def check_package_data_first(command):
 # Find data files
 #---------------------------------------------------------------------------
 
-def make_dir_struct(tag,base,out_base):
-    """Make the directory structure of all files below a starting dir.
-
-    This is just a convenience routine to help build a nested directory
-    hierarchy because distutils is too stupid to do this by itself.
-
-    XXX - this needs a proper docstring!
-    """
-
-    # we'll use these a lot below
-    lbase = len(base)
-    pathsep = os.path.sep
-    lpathsep = len(pathsep)
-
-    out = []
-    for (dirpath,dirnames,filenames) in os.walk(base):
-        # we need to strip out the dirpath from the base to map it to the
-        # output (installation) path.  This requires possibly stripping the
-        # path separator, because otherwise pjoin will not work correctly
-        # (pjoin('foo/','/bar') returns '/bar').
-
-        dp_eff = dirpath[lbase:]
-        if dp_eff.startswith(pathsep):
-            dp_eff = dp_eff[lpathsep:]
-        # The output path must be anchored at the out_base marker
-        out_path = pjoin(out_base,dp_eff)
-        # Now we can generate the final filenames. Since os.walk only produces
-        # filenames, we must join back with the dirpath to get full valid file
-        # paths:
-        pfiles = [pjoin(dirpath,f) for f in filenames]
-        # Finally, generate the entry we need, which is a pari of (output
-        # path, files) for use as a data_files parameter in install_data.
-        out.append((out_path, pfiles))
-
-    return out
-
-
 def find_data_files():
     """
     Find IPython's data_files.
@@ -207,7 +162,10 @@ def find_data_files():
     Just man pages at this point.
     """
 
-    manpagebase = pjoin('share', 'man', 'man1')
+    if "freebsd" in sys.platform:
+        manpagebase = pjoin('man', 'man1')
+    else:
+        manpagebase = pjoin('share', 'man', 'man1')
 
     # Simple file lists can be made by hand
     manpages = [f for f in glob(pjoin('docs','man','*.1.gz')) if isfile(f)]
@@ -220,30 +178,6 @@ def find_data_files():
 
     return data_files
 
-
-def make_man_update_target(manpage):
-    """Return a target_update-compliant tuple for the given manpage.
-
-    Parameters
-    ----------
-    manpage : string
-      Name of the manpage, must include the section number (trailing number).
-
-    Example
-    -------
-
-    >>> make_man_update_target('ipython.1') #doctest: +NORMALIZE_WHITESPACE
-    ('docs/man/ipython.1.gz',
-     ['docs/man/ipython.1'],
-     'cd docs/man && gzip -9c ipython.1 > ipython.1.gz')
-    """
-    man_dir = pjoin('docs', 'man')
-    manpage_gz = manpage + '.gz'
-    manpath = pjoin(man_dir, manpage)
-    manpath_gz = pjoin(man_dir, manpage_gz)
-    gz_cmd = ( "cd %(man_dir)s && gzip -9c %(manpage)s > %(manpage_gz)s" %
-               locals() )
-    return (manpath_gz, [manpath], gz_cmd)
 
 # The two functions below are copied from IPython.utils.path, so we don't need
 # to import IPython during setup, which fails on Python 3.
@@ -340,7 +274,7 @@ class build_scripts_entrypt(build_scripts):
                 # Write .cmd wrappers for Windows so 'ipython' etc. work at the
                 # command line
                 cmd_file = os.path.join(self.build_dir, name + '.cmd')
-                cmd = '@"{python}" "%~dp0\{script}" %*\r\n'.format(
+                cmd = r'@"{python}" "%~dp0\{script}" %*\r\n'.format(
                         python=sys.executable, script=name)
                 log.info("Writing %s wrapper script" % cmd_file)
                 with open(cmd_file, 'w') as f:
@@ -426,6 +360,13 @@ def git_prebuild(pkg_dir, build_cmd=build_py):
     class MyBuildPy(build_cmd):
         ''' Subclass to write commit data into installation tree '''
         def run(self):
+            # loose as `.dev` is suppose to be invalid
+            print("check version number")
+            loose_pep440re = re.compile(r'^(\d+)\.(\d+)\.(\d+((a|b|rc)\d+)?)(\.post\d+)?(\.dev\d*)?$')
+            if not loose_pep440re.match(version):
+                raise ValueError("Version number '%s' is not valid (should match [N!]N(.N)*[{a|b|rc}N][.postN][.devN])" % version)
+
+
             build_cmd.run(self)
             # this one will only fire for build commands
             if hasattr(self, 'build_lib'):

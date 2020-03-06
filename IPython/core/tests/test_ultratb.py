@@ -2,22 +2,21 @@
 """Tests for IPython.core.ultratb
 """
 import io
+import logging
+import re
 import sys
 import os.path
 from textwrap import dedent
 import traceback
 import unittest
 
-from ..ultratb import ColorTB, VerboseTB
+from IPython.core.ultratb import ColorTB, VerboseTB
 
 
 from IPython.testing import tools as tt
 from IPython.testing.decorators import onlyif_unicode_paths
 from IPython.utils.syspathcontext import prepended_to_syspath
 from IPython.utils.tempdir import TemporaryDirectory
-from IPython.utils.py3compat import PY3
-
-ip = get_ipython()
 
 file_1 = """1
 2
@@ -29,6 +28,26 @@ def f():
 file_2 = """def f():
   1/0
 """
+
+
+def recursionlimit(frames):
+    """
+    decorator to set the recursion limit temporarily
+    """
+
+    def inner(test_function):
+        def wrapper(*args, **kwargs):
+            rl = sys.getrecursionlimit()
+            sys.setrecursionlimit(frames)
+            try:
+                return test_function(*args, **kwargs)
+            finally:
+                sys.setrecursionlimit(rl)
+
+        return wrapper
+
+    return inner
+
 
 class ChangedPyFileTest(unittest.TestCase):
     def test_changing_py_file(self):
@@ -94,7 +113,28 @@ class NonAsciiTest(unittest.TestCase):
             with tt.AssertPrints("ZeroDivisionError"):
                 with tt.AssertPrints(u'дбИЖ', suppress=False):
                     ip.run_cell('fail()')
+    
+    def test_nonascii_msg(self):
+        cell = u"raise Exception('é')"
+        expected = u"Exception('é')"
+        ip.run_cell("%xmode plain")
+        with tt.AssertPrints(expected):
+            ip.run_cell(cell)
 
+        ip.run_cell("%xmode verbose")
+        with tt.AssertPrints(expected):
+            ip.run_cell(cell)
+
+        ip.run_cell("%xmode context")
+        with tt.AssertPrints(expected):
+            ip.run_cell(cell)
+
+        ip.run_cell("%xmode minimal")
+        with tt.AssertPrints(u"Exception: é"):
+            ip.run_cell(cell)
+
+        # Put this back into Context mode for later tests.
+        ip.run_cell("%xmode context")
 
 class NestedGenExprTestCase(unittest.TestCase):
     """
@@ -152,6 +192,35 @@ class SyntaxErrorTest(unittest.TestCase):
             with tt.AssertPrints("line unknown"):
                 ip.run_cell("raise SyntaxError()")
 
+    def test_syntaxerror_no_stacktrace_at_compile_time(self):
+        syntax_error_at_compile_time = """
+def foo():
+    ..
+"""
+        with tt.AssertPrints("SyntaxError"):
+            ip.run_cell(syntax_error_at_compile_time)
+
+        with tt.AssertNotPrints("foo()"):
+            ip.run_cell(syntax_error_at_compile_time)
+
+    def test_syntaxerror_stacktrace_when_running_compiled_code(self):
+        syntax_error_at_runtime = """
+def foo():
+    eval("..")
+
+def bar():
+    foo()
+
+bar()
+"""
+        with tt.AssertPrints("SyntaxError"):
+            ip.run_cell(syntax_error_at_runtime)
+        # Assert syntax error during runtime generate stacktrace
+        with tt.AssertPrints(["foo()", "bar()"]):
+            ip.run_cell(syntax_error_at_runtime)
+        del ip.user_ns['bar']
+        del ip.user_ns['foo']
+
     def test_changing_py_file(self):
         with TemporaryDirectory() as td:
             fname = os.path.join(td, "foo.py")
@@ -177,6 +246,13 @@ class SyntaxErrorTest(unittest.TestCase):
         except ValueError:
             with tt.AssertPrints('QWERTY'):
                 ip.showsyntaxerror()
+
+
+class MemoryErrorTest(unittest.TestCase):
+    def test_memoryerror(self):
+        memoryerror_code = "(" * 200 + ")" * 200
+        with tt.AssertPrints("MemoryError"):
+            ip.run_cell(memoryerror_code)
 
 
 class Python3ChainedExceptionsTest(unittest.TestCase):
@@ -210,63 +286,123 @@ except Exception:
     """
 
     def test_direct_cause_error(self):
-        if PY3:
-            with tt.AssertPrints(["KeyError", "NameError", "direct cause"]):
-                ip.run_cell(self.DIRECT_CAUSE_ERROR_CODE)
+        with tt.AssertPrints(["KeyError", "NameError", "direct cause"]):
+            ip.run_cell(self.DIRECT_CAUSE_ERROR_CODE)
 
     def test_exception_during_handling_error(self):
-        if PY3:
-            with tt.AssertPrints(["KeyError", "NameError", "During handling"]):
-                ip.run_cell(self.EXCEPTION_DURING_HANDLING_CODE)
+        with tt.AssertPrints(["KeyError", "NameError", "During handling"]):
+            ip.run_cell(self.EXCEPTION_DURING_HANDLING_CODE)
 
     def test_suppress_exception_chaining(self):
-        if PY3:
-            with tt.AssertNotPrints("ZeroDivisionError"), \
-                    tt.AssertPrints("ValueError", suppress=False):
-                ip.run_cell(self.SUPPRESS_CHAINING_CODE)
+        with tt.AssertNotPrints("ZeroDivisionError"), \
+             tt.AssertPrints("ValueError", suppress=False):
+            ip.run_cell(self.SUPPRESS_CHAINING_CODE)
+
+    def test_plain_direct_cause_error(self):
+        with tt.AssertPrints(["KeyError", "NameError", "direct cause"]):
+            ip.run_cell("%xmode Plain")
+            ip.run_cell(self.DIRECT_CAUSE_ERROR_CODE)
+            ip.run_cell("%xmode Verbose")
+
+    def test_plain_exception_during_handling_error(self):
+        with tt.AssertPrints(["KeyError", "NameError", "During handling"]):
+            ip.run_cell("%xmode Plain")
+            ip.run_cell(self.EXCEPTION_DURING_HANDLING_CODE)
+            ip.run_cell("%xmode Verbose")
+
+    def test_plain_suppress_exception_chaining(self):
+        with tt.AssertNotPrints("ZeroDivisionError"), \
+             tt.AssertPrints("ValueError", suppress=False):
+            ip.run_cell("%xmode Plain")
+            ip.run_cell(self.SUPPRESS_CHAINING_CODE)
+            ip.run_cell("%xmode Verbose")
+
+
+class RecursionTest(unittest.TestCase):
+    DEFINITIONS = """
+def non_recurs():
+    1/0
+
+def r1():
+    r1()
+
+def r3a():
+    r3b()
+
+def r3b():
+    r3c()
+
+def r3c():
+    r3a()
+
+def r3o1():
+    r3a()
+
+def r3o2():
+    r3o1()
+"""
+    def setUp(self):
+        ip.run_cell(self.DEFINITIONS)
+
+    def test_no_recursion(self):
+        with tt.AssertNotPrints("skipping similar frames"):
+            ip.run_cell("non_recurs()")
+
+    @recursionlimit(200)
+    def test_recursion_one_frame(self):
+        with tt.AssertPrints(re.compile(
+            r"\[\.\.\. skipping similar frames: r1 at line 5 \(\d{2,3} times\)\]")
+        ):
+            ip.run_cell("r1()")
+
+    @recursionlimit(200)
+    def test_recursion_three_frames(self):
+        with tt.AssertPrints("[... skipping similar frames: "), \
+                tt.AssertPrints(re.compile(r"r3a at line 8 \(\d{2} times\)"), suppress=False), \
+                tt.AssertPrints(re.compile(r"r3b at line 11 \(\d{2} times\)"), suppress=False), \
+                tt.AssertPrints(re.compile(r"r3c at line 14 \(\d{2} times\)"), suppress=False):
+            ip.run_cell("r3o2()")
 
 
 #----------------------------------------------------------------------------
 
 # module testing (minimal)
-if sys.version_info > (3,):
-    def test_handlers():
-        def spam(c, d_e):
-            (d, e) = d_e
-            x = c + d
-            y = c * d
-            foo(x, y)
+def test_handlers():
+    def spam(c, d_e):
+        (d, e) = d_e
+        x = c + d
+        y = c * d
+        foo(x, y)
 
-        def foo(a, b, bar=1):
-            eggs(a, b + bar)
+    def foo(a, b, bar=1):
+        eggs(a, b + bar)
 
-        def eggs(f, g, z=globals()):
-            h = f + g
-            i = f - g
-            return h / i
-        
-        buff = io.StringIO()
+    def eggs(f, g, z=globals()):
+        h = f + g
+        i = f - g
+        return h / i
 
-        buff.write('')
-        buff.write('*** Before ***')
-        try:
-            buff.write(spam(1, (2, 3)))
-        except:
-            traceback.print_exc(file=buff)
+    buff = io.StringIO()
 
-        handler = ColorTB(ostream=buff)
-        buff.write('*** ColorTB ***')
-        try:
-            buff.write(spam(1, (2, 3)))
-        except:
-            handler(*sys.exc_info())
-        buff.write('')
+    buff.write('')
+    buff.write('*** Before ***')
+    try:
+        buff.write(spam(1, (2, 3)))
+    except:
+        traceback.print_exc(file=buff)
 
-        handler = VerboseTB(ostream=buff)
-        buff.write('*** VerboseTB ***')
-        try:
-            buff.write(spam(1, (2, 3)))
-        except:
-            handler(*sys.exc_info())
-        buff.write('')
+    handler = ColorTB(ostream=buff)
+    buff.write('*** ColorTB ***')
+    try:
+        buff.write(spam(1, (2, 3)))
+    except:
+        handler(*sys.exc_info())
+    buff.write('')
 
+    handler = VerboseTB(ostream=buff)
+    buff.write('*** VerboseTB ***')
+    try:
+        buff.write(spam(1, (2, 3)))
+    except:
+        handler(*sys.exc_info())
+    buff.write('')

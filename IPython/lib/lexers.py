@@ -34,12 +34,14 @@ This includes:
 import re
 
 # Third party
-from pygments.lexers import BashLexer, PythonLexer, Python3Lexer
+from pygments.lexers import (
+    BashLexer, HtmlLexer, JavascriptLexer, RubyLexer, PerlLexer, PythonLexer,
+    Python3Lexer, TexLexer)
 from pygments.lexer import (
     Lexer, DelegatingLexer, RegexLexer, do_insertions, bygroups, using,
 )
 from pygments.token import (
-    Comment, Generic, Keyword, Literal, Name, Operator, Other, Text, Error,
+    Generic, Keyword, Literal, Name, Operator, Other, Text, Error,
 )
 from pygments.util import get_bool_opt
 
@@ -51,19 +53,6 @@ __all__ = ['build_ipy_lexer', 'IPython3Lexer', 'IPythonLexer',
            'IPythonPartialTracebackLexer', 'IPythonTracebackLexer',
            'IPythonConsoleLexer', 'IPyLexer']
 
-ipython_tokens = [
-  (r"(?s)(\s*)(%%)(\w+)(.*)", bygroups(Text, Operator, Keyword, Text)),
-  (r'(?s)(^\s*)(%%!)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(BashLexer))),
-  (r"(%%?)(\w+)(\?\??)$",  bygroups(Operator, Keyword, Operator)),
-  (r"\b(\?\??)(\s*)$",  bygroups(Operator, Text)),
-  (r'(%)(sx|sc|system)(.*)(\n)', bygroups(Operator, Keyword,
-                                       using(BashLexer), Text)),
-  (r'(%)(\w+)(.*\n)', bygroups(Operator, Keyword, Text)),
-  (r'^(!!)(.+)(\n)', bygroups(Operator, using(BashLexer), Text)),
-  (r'(!)(?!=)(.+)(\n)', bygroups(Operator, using(BashLexer), Text)),
-  (r'^(\s*)(\?\??)(\s*%{0,2}[\w\.\*]*)', bygroups(Text, Operator, Text)),
-  (r'(\s*%{0,2}[\w\.\*]*)(\?\??)(\s*)$', bygroups(Text, Operator, Text)),
-]
 
 def build_ipy_lexer(python3):
     """Builds IPython lexers depending on the value of `python3`.
@@ -83,16 +72,45 @@ def build_ipy_lexer(python3):
     # we will also have two IPython lexer classes.
     if python3:
         PyLexer = Python3Lexer
-        clsname = 'IPython3Lexer'
         name = 'IPython3'
         aliases = ['ipython3']
         doc = """IPython3 Lexer"""
     else:
         PyLexer = PythonLexer
-        clsname = 'IPythonLexer'
         name = 'IPython'
         aliases = ['ipython2', 'ipython']
         doc = """IPython Lexer"""
+
+    ipython_tokens = [
+       (r'(?s)(\s*)(%%capture)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%debug)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?is)(\s*)(%%html)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(HtmlLexer))),
+        (r'(?s)(\s*)(%%javascript)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(JavascriptLexer))),
+        (r'(?s)(\s*)(%%js)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(JavascriptLexer))),
+        (r'(?s)(\s*)(%%latex)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(TexLexer))),
+        (r'(?s)(\s*)(%%perl)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PerlLexer))),
+        (r'(?s)(\s*)(%%prun)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%pypy)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%python)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%python2)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PythonLexer))),
+        (r'(?s)(\s*)(%%python3)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(Python3Lexer))),
+        (r'(?s)(\s*)(%%ruby)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(RubyLexer))),
+        (r'(?s)(\s*)(%%time)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%timeit)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%writefile)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r'(?s)(\s*)(%%file)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(PyLexer))),
+        (r"(?s)(\s*)(%%)(\w+)(.*)", bygroups(Text, Operator, Keyword, Text)),
+        (r'(?s)(^\s*)(%%!)([^\n]*\n)(.*)', bygroups(Text, Operator, Text, using(BashLexer))),
+        (r"(%%?)(\w+)(\?\??)$",  bygroups(Operator, Keyword, Operator)),
+        (r"\b(\?\??)(\s*)$",  bygroups(Operator, Text)),
+        (r'(%)(sx|sc|system)(.*)(\n)', bygroups(Operator, Keyword,
+                                                using(BashLexer), Text)),
+        (r'(%)(\w+)(.*\n)', bygroups(Operator, Keyword, Text)),
+        (r'^(!!)(.+)(\n)', bygroups(Operator, using(BashLexer), Text)),
+        (r'(!)(?!=)(.+)(\n)', bygroups(Operator, using(BashLexer), Text)),
+        (r'^(\s*)(\?\??)(\s*%{0,2}[\w\.\*]*)', bygroups(Text, Operator, Text)),
+        (r'(\s*%{0,2}[\w\.\*]*)(\?\??)(\s*)$', bygroups(Text, Operator, Text)),
+    ]
 
     tokens = PyLexer.tokens.copy()
     tokens['root'] = ipython_tokens + tokens['root']
@@ -111,7 +129,7 @@ class IPythonPartialTracebackLexer(RegexLexer):
     """
     Partial lexer for IPython tracebacks.
 
-    Handles all the non-python output. This works for both Python 2.x and 3.x.
+    Handles all the non-python output.
 
     """
     name = 'IPython Partial Traceback'
@@ -219,7 +237,7 @@ class IPythonConsoleLexer(Lexer):
 
             ---------------------------------------------------------------------------
             Exception                                 Traceback (most recent call last)
-            <ipython-input-1-fca2ab0ca76b> in <module>()
+            <ipython-input-1-fca2ab0ca76b> in <module>
             ----> 1 raise Exception
 
             Exception:
@@ -232,9 +250,12 @@ class IPythonConsoleLexer(Lexer):
     # The regexps used to determine what is input and what is output.
     # The default prompts for IPython are:
     #
-    #     c.PromptManager.in_template  = 'In [\#]: '
-    #     c.PromptManager.in2_template = '   .\D.: '
-    #     c.PromptManager.out_template = 'Out[\#]: '
+    #    in           = 'In [#]: '
+    #    continuation = '   .D.: '
+    #    template     = 'Out[#]: '
+    #
+    # Where '#' is the 'prompt number' or 'execution count' and 'D' 
+    # D is a number of dots  matching the width of the execution count 
     #
     in1_regex = r'In \[[0-9]+\]: '
     in2_regex = r'   \.\.+\.: '
@@ -468,12 +489,12 @@ class IPythonConsoleLexer(Lexer):
             if insertion:
                 self.insertions.append((len(self.buffer), [insertion]))
             self.buffer += code
-        else:
-            for token in self.buffered_tokens():
-                yield token
+
+        for token in self.buffered_tokens():
+            yield token
 
 class IPyLexer(Lexer):
-    """
+    r"""
     Primary lexer for all IPython-like code.
 
     This is a simple helper lexer.  If the first line of the text begins with

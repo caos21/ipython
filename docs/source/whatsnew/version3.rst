@@ -2,6 +2,48 @@
  3.x Series
 ============
 
+IPython 3.2.3
+=============
+
+Fixes compatibility with Python 3.4.4.
+
+IPython 3.2.2
+=============
+
+Address vulnerabilities when files have maliciously crafted filenames (CVE-2015-6938),
+or vulnerability when opening text files with malicious binary content (CVE pending).
+
+Users are **strongly** encouraged to upgrade immediately.
+There are also a few small unicode and nbconvert-related fixes.
+
+
+IPython 3.2.1
+=============
+
+IPython 3.2.1 is a small bugfix release, primarily for cross-site security fixes in the notebook.
+Users are **strongly** encouraged to upgrade immediately.
+There are also a few small unicode and nbconvert-related fixes.
+
+See :ref:`issues_list_3` for details.
+
+
+IPython 3.2
+===========
+
+IPython 3.2 contains important security fixes. Users are **strongly** encouraged to upgrade immediately.
+
+Highlights:
+
+- Address cross-site scripting vulnerabilities CVE-2015-4706, CVE-2015-4707
+- A security improvement that set the secure attribute to login cookie to prevent them to be sent over http
+- Revert the face color of matplotlib axes in the inline backend to not be transparent.
+- Enable mathjax safe mode by default
+- Fix XSS vulnerability in JSON error messages
+- Various widget-related fixes
+
+See :ref:`issues_list_3` for details.
+
+
 IPython 3.1
 ===========
 
@@ -140,7 +182,7 @@ Other new features
 * ``NotebookApp.webapp_settings`` is deprecated and replaced with
   the more informatively named ``NotebookApp.tornado_settings``.
 
-* Using :magic:`timeit` prints warnings if there is atleast a 4x difference in timings
+* Using :magic:`timeit` prints warnings if there is at least a 4x difference in timings
   between the slowest and fastest runs, since this might meant that the multiple
   runs are not independent of one another.
 
@@ -236,7 +278,7 @@ Backwards incompatible changes
   Adapters are included, so IPython frontends can still talk to kernels that
   implement protocol version 4.
 
-* The :ref:`notebook format <nbformat>` has been updated from version 3 to version 4.
+* The notebook format has been updated from version 3 to version 4.
   Read-only support for v4 notebooks has been backported to IPython 2.4.
   Notable changes:
   
@@ -333,7 +375,7 @@ Example policies::
 Matches embeddings on any subdomain of jupyter.org, so long as they are served
 over SSL.
 
-There is a `report-uri <https://developer.mozilla.org/en-US/docs/Web/Security/CSP/CSP_policy_directives#report-uri>`_ endpoint available for logging CSP violations, located at
+There is a `report-uri <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy/report-uri>`_ endpoint available for logging CSP violations, located at
 ``/api/security/csp-report``. To use it, set ``report-uri`` as part of the CSP::
 
     c.NotebookApp.tornado_settings = {

@@ -7,15 +7,14 @@ Inheritance diagram:
 .. inheritance-diagram:: IPython.utils.text
    :parts: 3
 """
-from __future__ import absolute_import
 
 import os
 import re
 import sys
 import textwrap
 from string import Formatter
+from pathlib import Path
 
-from IPython.testing.skipdoctest import skip_doctest_py3, skip_doctest
 from IPython.utils import py3compat
 
 # datetime.strftime date format for ipython
@@ -64,11 +63,10 @@ class LSString(str):
     n = nlstr = property(get_nlstr)
 
     def get_paths(self):
-        from path import path
         try:
             return self.__paths
         except AttributeError:
-            self.__paths = [path(p) for p in self.split('\n') if os.path.exists(p)]
+            self.__paths = [Path(p) for p in self.split('\n') if os.path.exists(p)]
             return self.__paths
 
     p = paths = property(get_paths)
@@ -83,7 +81,7 @@ class LSString(str):
 #     print arg
 #
 #
-# print_lsstring = result_display.when_type(LSString)(print_lsstring)
+# print_lsstring = result_display.register(LSString)(print_lsstring)
 
 
 class SList(list):
@@ -123,11 +121,10 @@ class SList(list):
     n = nlstr = property(get_nlstr)
 
     def get_paths(self):
-        from path import path
         try:
             return self.__paths
         except AttributeError:
-            self.__paths = [path(p) for p in self if os.path.exists(p)]
+            self.__paths = [Path(p) for p in self if os.path.exists(p)]
             return self.__paths
 
     p = paths = property(get_paths)
@@ -158,7 +155,7 @@ class SList(list):
             except IndexError:
                 return ""
 
-        if isinstance(pattern, py3compat.string_types):
+        if isinstance(pattern, str):
             pred = lambda x : re.search(pattern, x, re.IGNORECASE)
         else:
             pred = pattern
@@ -246,7 +243,7 @@ class SList(list):
 #
 #     nlprint(arg)   # This was a nested list printer, now removed.
 #
-# print_slist = result_display.when_type(SList)(print_slist)
+# print_slist = result_display.register(SList)(print_slist)
 
 
 def indent(instr,nspaces=4, ntabs=0, flatten=False):
@@ -306,8 +303,10 @@ def list_strings(arg):
         Out[9]: ['A', 'list', 'of', 'strings']
     """
 
-    if isinstance(arg, py3compat.string_types): return [arg]
-    else: return arg
+    if isinstance(arg, str):
+        return [arg]
+    else:
+        return arg
 
 
 def marquee(txt='',width=78,mark='*'):
@@ -514,7 +513,6 @@ class EvalFormatter(Formatter):
 # inside [], so EvalFormatter can handle slicing. Once we only support 3.4 and
 # above, it should be possible to remove FullEvalFormatter.
 
-@skip_doctest_py3
 class FullEvalFormatter(Formatter):
     """A String Formatter that allows evaluation of simple expressions.
     
@@ -530,17 +528,17 @@ class FullEvalFormatter(Formatter):
 
         In [1]: f = FullEvalFormatter()
         In [2]: f.format('{n//4}', n=8)
-        Out[2]: u'2'
+        Out[2]: '2'
 
         In [3]: f.format('{list(range(5))[2:4]}')
-        Out[3]: u'[2, 3]'
+        Out[3]: '[2, 3]'
 
         In [4]: f.format('{3*2}')
-        Out[4]: u'6'
+        Out[4]: '6'
     """
     # copied from Formatter._vformat with minor changes to allow eval
     # and replace the format_spec code with slicing
-    def vformat(self, format_string, args, kwargs):
+    def vformat(self, format_string:str, args, kwargs)->str:
         result = []
         for literal_text, field_name, format_spec, conversion in \
                 self.parse(format_string):
@@ -568,10 +566,9 @@ class FullEvalFormatter(Formatter):
                 # format the object and append to the result
                 result.append(self.format_field(obj, ''))
 
-        return u''.join(py3compat.cast_unicode(s) for s in result)
+        return ''.join(result)
 
 
-@skip_doctest_py3
 class DollarFormatter(FullEvalFormatter):
     """Formatter allowing Itpl style $foo replacement, for names and attribute
     access only. Standard {foo} replacement also works, and allows full
@@ -583,15 +580,15 @@ class DollarFormatter(FullEvalFormatter):
 
         In [1]: f = DollarFormatter()
         In [2]: f.format('{n//4}', n=8)
-        Out[2]: u'2'
+        Out[2]: '2'
 
         In [3]: f.format('23 * 76 is $result', result=23*76)
-        Out[3]: u'23 * 76 is 1748'
+        Out[3]: '23 * 76 is 1748'
 
         In [4]: f.format('$a or {b}', a=1, b=2)
-        Out[4]: u'1 or 2'
+        Out[4]: '1 or 2'
     """
-    _dollar_pattern = re.compile("(.*?)\$(\$?[\w\.]+)")
+    _dollar_pattern_ignore_single_quote = re.compile(r"(.*?)\$(\$?[\w\.]+)(?=([^']*'[^']*')*[^']*$)")
     def parse(self, fmt_string):
         for literal_txt, field_name, format_spec, conversion \
                     in Formatter.parse(self, fmt_string):
@@ -599,7 +596,7 @@ class DollarFormatter(FullEvalFormatter):
             # Find $foo patterns in the literal text.
             continue_from = 0
             txt = ""
-            for m in self._dollar_pattern.finditer(literal_txt):
+            for m in self._dollar_pattern_ignore_single_quote.finditer(literal_txt):
                 new_txt, new_field = m.group(1,2)
                 # $$foo --> $foo
                 if new_field.startswith("$"):
@@ -620,10 +617,10 @@ def _col_chunks(l, max_rows, row_first=False):
     """Yield successive max_rows-sized column chunks from l."""
     if row_first:
         ncols = (len(l) // max_rows) + (len(l) % max_rows > 0)
-        for i in py3compat.xrange(ncols):
-            yield [l[j] for j in py3compat.xrange(i, len(l), ncols)]
+        for i in range(ncols):
+            yield [l[j] for j in range(i, len(l), ncols)]
     else:
-        for i in py3compat.xrange(0, len(l), max_rows):
+        for i in range(0, len(l), max_rows):
             yield l[i:(i + max_rows)]
 
 
@@ -636,7 +633,7 @@ def _find_optimal(rlist, row_first=False, separator_size=2, displaywidth=80):
         if sumlength + separator_size * (ncols - 1) <= displaywidth:
             break
     return {'num_columns': ncols,
-            'optimal_separator_width': (displaywidth - sumlength) / (ncols - 1) if (ncols - 1) else 0,
+            'optimal_separator_width': (displaywidth - sumlength) // (ncols - 1) if (ncols - 1) else 0,
             'max_rows': max_rows,
             'column_widths': col_widths
             }
@@ -664,9 +661,9 @@ def compute_item_matrix(items, row_first=False, empty=None, *args, **kwargs) :
     empty : (default None)
         default value to fill list if needed
     separator_size : int (default=2)
-        How much caracters will be used as a separation between each columns.
+        How much characters will be used as a separation between each columns.
     displaywidth : int (default=80)
-        The width of the area onto wich the columns should enter
+        The width of the area onto which the columns should enter
 
     Returns
     -------
@@ -674,7 +671,7 @@ def compute_item_matrix(items, row_first=False, empty=None, *args, **kwargs) :
     strings_matrix
 
         nested list of string, the outer most list contains as many list as
-        rows, the innermost lists have each as many element as colums. If the
+        rows, the innermost lists have each as many element as columns. If the
         total number of elements in `items` does not equal the product of
         rows*columns, the last element of some lists are filled with `None`.
 
@@ -695,17 +692,12 @@ def compute_item_matrix(items, row_first=False, empty=None, *args, **kwargs) :
     ::
 
         In [1]: l = ['aaa','b','cc','d','eeeee','f','g','h','i','j','k','l']
-           ...: compute_item_matrix(l, displaywidth=12)
-        Out[1]:
-            ([['aaa', 'f', 'k'],
-            ['b', 'g', 'l'],
-            ['cc', 'h', None],
-            ['d', 'i', None],
-            ['eeeee', 'j', None]],
-            {'num_columns': 3,
-            'column_widths': [5, 1, 1],
-            'optimal_separator_width': 2,
-            'max_rows': 5})
+        In [2]: list, info = compute_item_matrix(l, displaywidth=12)
+        In [3]: list
+        Out[3]: [['aaa', 'f', 'k'], ['b', 'g', 'l'], ['cc', 'h', None], ['d', 'i', None], ['eeeee', 'j', None]]
+        In [4]: ideal = {'num_columns': 3, 'column_widths': [5, 1, 1], 'optimal_separator_width': 2, 'max_rows': 5}
+        In [5]: all((info[k] == ideal[k] for k in ideal.keys()))
+        Out[5]: True
     """
     info = _find_optimal(list(map(len, items)), row_first, *args, **kwargs)
     nrow, ncol = info['max_rows'], info['num_columns']

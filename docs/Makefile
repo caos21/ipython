@@ -7,7 +7,7 @@ SPHINXBUILD   = sphinx-build
 PAPER         =
 SRCDIR        = source
 BUILDDIR      = build
-PYTHON        = python
+PYTHON        = python3
 
 # Internal variables.
 PAPEROPT_a4     = -D latex_paper_size=a4
@@ -29,7 +29,6 @@ help:
 	@echo "  info        Texinfo files and run them through makeinfo"
 	@echo "  changes     an overview over all changed/added/deprecated items"
 	@echo "  linkcheck   check all external links for integrity (takes a long time)"
-	@echo "  gh-pages    clone IPython docs in ./gh-pages/ , build doc, autocommit"
 	@echo
 	@echo "Compound utility targets:"
 	@echo "pdf          latex and then runs the PDF generation"
@@ -41,8 +40,8 @@ clean_api:
 
 clean: clean_api
 	-rm -rf build/* dist/*
-	-cd $(SRCDIR)/config/options; test -f generated && cat generated | xargs rm -f
-	-rm -rf $(SRCDIR)/config/options/generated
+	-rm -f $(SRCDIR)/config/options/config-generated.txt
+	-rm -f $(SRCDIR)/config/shortcuts/*.csv
 	-rm -f $(SRCDIR)/interactive/magics-generated.txt
 
 pdf: latex
@@ -60,8 +59,8 @@ dist: html
 	cp -al build/html .
 	@echo "Build finished.  Final docs are in html/"
 
-html: api autoconfig automagic
-html_noapi: clean_api autoconfig automagic
+html: api autoconfig automagic autogen_shortcuts
+html_noapi: clean_api autoconfig automagic autogen_shortcuts
 
 html html_noapi:
 	mkdir -p build/html build/doctrees
@@ -75,9 +74,9 @@ source/interactive/magics-generated.txt: autogen_magics.py
 	$(PYTHON) autogen_magics.py
 	@echo "Created docs for line & cell magics"
 
-autoconfig: source/config/options/generated
+autoconfig: source/config/options/config-generated.txt
 
-source/config/options/generated:
+source/config/options/config-generated.txt: autogen_config.py
 	$(PYTHON) autogen_config.py
 	@echo "Created docs for config options"
 
@@ -86,6 +85,10 @@ api: source/api/generated/gen.txt
 source/api/generated/gen.txt:
 	$(PYTHON) autogen_api.py
 	@echo "Build API docs finished."
+
+autogen_shortcuts: autogen_shortcuts.py ../IPython/terminal/interactiveshell.py source/config/shortcuts/index.rst
+	$(PYTHON) autogen_shortcuts.py
+	@echo "Created docs for shortcuts"
 
 pickle:
 	mkdir -p build/pickle build/doctrees
@@ -103,16 +106,6 @@ htmlhelp:
 	@echo
 	@echo "Build finished; now you can run HTML Help Workshop with the" \
 	      ".hhp project file in build/htmlhelp."
-
-qthelp:
-	mkdir -p build/qthelp
-	$(SPHINXBUILD) -b qthelp $(ALLSPHINXOPTS) build/qthelp
-	@echo
-	@echo "Build finished; now you can run "qcollectiongenerator" with the" \
-	      ".qhcp project file in $(BUILDDIR)/qthelp, like this:"
-	@echo "# qcollectiongenerator $(BUILDDIR)/qthelp/IPython.qhcp"
-	@echo "To view the help file:"
-	@echo "# assistant -collectionFile $(BUILDDIR)/qthelp/IPython.qhc"
 
 latex: api autoconfig
 	mkdir -p build/latex build/doctrees
@@ -134,15 +127,6 @@ linkcheck:
 	@echo
 	@echo "Link check complete; look for any errors in the above output " \
 	      "or in build/linkcheck/output.rst."
-
-nightly: dist
-	rsync -avH --delete dist/ ipython:www/doc/nightly
-
-gh-pages: clean html
-	# if VERSION is unspecified, it will be dev
-	# For releases, VERSION should be just the major version,
-	# e.g. VERSION=2 make gh-pages
-	$(PYTHON) gh-pages.py $(VERSION)
 
 texinfo:
 	mkdir -p $(BUILDDIR)/texinfo

@@ -155,7 +155,7 @@ cycle from several institutions:
 .. __: http://modular.math.washington.edu/grants/compmath09
 
 - Microsoft's team working on `Python Tools for Visual Studio`__ developed the 
-  integraton of IPython into the Python plugin for Visual Studio 2010.
+  integratron of IPython into the Python plugin for Visual Studio 2010.
 
 .. __: http://pytools.codeplex.com
 
@@ -232,7 +232,7 @@ may also offer a slightly more featureful application (with menus and other GUI
 elements), but we remain committed to always shipping this easy to embed
 widget.
 
-See the `Jupyter Qt Console site <http://jupyter.org/qtconsole>`_ for a detailed
+See the `Jupyter Qt Console site <https://jupyter.org/qtconsole>`_ for a detailed
 description of the console's features and use.
 
 
@@ -264,7 +264,7 @@ reference docs.
 Refactoring
 -----------
 
-As of this release, a signifiant portion of IPython has been refactored.  This
+As of this release, a significant portion of IPython has been refactored.  This
 refactoring is founded on a number of new abstractions.  The main new classes
 that implement these abstractions are:
 

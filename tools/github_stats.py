@@ -9,7 +9,6 @@ To generate a report for IPython 2.0, run:
 # Imports
 #-----------------------------------------------------------------------------
 
-from __future__ import print_function
 
 import codecs
 import sys
@@ -110,9 +109,10 @@ def report(issues, show_urls=False):
 #-----------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    # deal with unicode
-    if sys.version_info < (3,):
-        sys.stdout = codecs.getwriter('utf8')(sys.stdout)
+
+    print("DEPRECATE: backport_pr.py is deprecated and it is now recommended"
+          "to install `ghpro` from PyPI.", file=sys.stderr)
+
     
     # Whether to add reST urls for all issues in printout.
     show_urls = True
@@ -168,7 +168,7 @@ if __name__ == "__main__":
                 state='closed',
                 auth=True,
         )
-        issues, pulls = split_pulls(issues_and_pulls)
+        issues, pulls = split_pulls(issues_and_pulls, project=project)
     else:
         issues = issues_closed_since(since, project=project, pulls=False)
         pulls = issues_closed_since(since, project=project, pulls=True)
@@ -212,8 +212,7 @@ if __name__ == "__main__":
 
     print("We closed %d issues and merged %d pull requests." % (n_issues, n_pulls))
     if milestone:
-        print("The full list can be seen `on GitHub <https://github.com/%s/milestone/%s>`__"
-            % (project, milestone)
+        print("The full list can be seen `on GitHub <https://github.com/{project}/issues?q=milestone%3A{milestone}>`__".format(project=project,milestone=milestone)
         )
     
     print()

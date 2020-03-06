@@ -7,57 +7,62 @@ loop, so you can use both a GUI and an interactive prompt together. IPython
 supports a number of common GUI toolkits, but from IPython 3.0, it is possible
 to integrate other event loops without modifying IPython itself.
 
-Terminal IPython handles event loops very differently from the IPython kernel,
-so different steps are needed to integrate with each.
+Supported event loops include ``qt4``, ``qt5``, ``gtk2``, ``gtk3``, ``wx``,
+``osx`` and ``tk``. Make sure the event loop you specify matches the GUI
+toolkit used by your own code.
 
-Event loops in the terminal
----------------------------
+To make IPython GUI event loop integration occur automatically at every
+startup, set the ``c.InteractiveShellApp.gui`` configuration key in your
+IPython profile (see :ref:`setting_config`).
 
-In the terminal, IPython uses a blocking Python function to wait for user input.
-However, the Python C API provides a hook, :c:func:`PyOS_InputHook`, which is
-called frequently while waiting for input. This can be set to a function which
-briefly runs the event loop and then returns.
+If the event loop you use is supported by IPython, turning on event loop
+integration follows the steps just described whether you use Terminal IPython
+or an IPython kernel.
 
-IPython provides Python level wrappers for setting and resetting this hook. To
-use them, subclass :class:`IPython.lib.inputhook.InputHookBase`, and define
-an ``enable(app=None)`` method, which initialises the event loop and calls
-``self.manager.set_inputhook(f)`` with a function which will briefly run the
-event loop before exiting. Decorate the class with a call to
-:func:`IPython.lib.inputhook.register`::
+However, the way Terminal IPython handles event loops is very different from
+the way IPython kernel does, so if you need to integrate with a new kind of
+event loop, different steps are needed to integrate with each.
 
-    from IPython.lib.inputhook import register, InputHookBase
+Integrating with a new event loop in the terminal
+-------------------------------------------------
 
-    @register('clutter')
-    class ClutterInputHook(InputHookBase):
-        def enable(self, app=None):
-            self.manager.set_inputhook(inputhook_clutter)
+.. versionchanged:: 5.0
 
-You can also optionally define a ``disable()`` method, taking no arguments, if
-there are extra steps needed to clean up. IPython will take care of resetting
-the hook, whether or not you provide a disable method.
+   There is a new API for event loop integration using prompt_toolkit.
 
-The simplest way to define the hook function is just to run one iteration of the
-event loop, or to run until no events are pending. Most event loops provide some
-mechanism to do one of these things. However, the GUI may lag slightly,
-because the hook is only called every 0.1 seconds. Alternatively, the hook can
-keep running the event loop until there is input ready on stdin. IPython
-provides a function to facilitate this:
+In the terminal, IPython uses prompt_toolkit to prompt the user for input.
+prompt_toolkit provides hooks to integrate with an external event loop.
 
-.. currentmodule:: IPython.lib.inputhook
+To integrate an event loop, define a function which runs the GUI event loop
+until there is input waiting for prompt_toolkit to process. There are two ways
+to detect this condition::
 
-.. function:: stdin_ready()
+    # Polling for input.
+    def inputhook(context):
+        while not context.input_is_ready():
+            # Replace this with the appropriate call for the event loop:
+            iterate_loop_once()
 
-   Returns True if there is something ready to read on stdin.
-   
-   If this is the case, the hook function should return immediately.
-   
-   This is implemented for Windows and POSIX systems - on other platforms, it
-   always returns True, so that the hook always gives Python a chance to check
-   for input.
+    # Using a file descriptor to notify the event loop to stop.
+    def inputhook2(context):
+        fd = context.fileno()
+        # Replace the functions below with those for the event loop.
+        add_file_reader(fd, callback=stop_the_loop)
+        run_the_loop()
+
+Once you have defined this function, register it with IPython:
+
+.. currentmodule:: IPython.terminal.pt_inputhooks
+
+.. function:: register(name, inputhook)
+
+   Register the function *inputhook* as the event loop integration for the
+   GUI *name*. If ``name='foo'``, then the user can enable this integration
+   by running ``%gui foo``.
 
 
-Event loops in the kernel
--------------------------
+Integrating with a new event loop in the kernel
+-----------------------------------------------
 
 The kernel runs its own event loop, so it's simpler to integrate with others.
 IPython allows the other event loop to take control, but it must call

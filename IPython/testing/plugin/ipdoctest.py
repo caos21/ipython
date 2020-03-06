@@ -19,14 +19,17 @@ Limitations:
 # Module imports
 
 # From the standard library
+import builtins as builtin_mod
 import doctest
 import inspect
 import logging
 import os
 import re
 import sys
-import traceback
-import unittest
+from importlib import import_module
+from io import StringIO
+
+from testpath import modified_env
 
 from inspect import getmodule
 
@@ -39,18 +42,9 @@ from doctest import (REPORTING_FLAGS, REPORT_ONLY_FIRST_FAILURE,
                      linecache)
 
 # Third-party modules
-import nose.core
 
 from nose.plugins import doctests, Plugin
-from nose.util import anyp, getpackage, test_address, resolve_name, tolist
-
-# Our own imports
-from IPython.utils.py3compat import builtin_mod, PY3, getcwd
-
-if PY3:
-    from io import StringIO
-else:
-    from StringIO import StringIO
+from nose.util import anyp, tolist
 
 #-----------------------------------------------------------------------------
 # Module globals and other constants
@@ -141,7 +135,7 @@ class DocTestFinder(doctest.DocTestFinder):
         # doctests in extension modules.
 
         # Local shorthands
-        from inspect import isroutine, isclass, ismodule
+        from inspect import isroutine, isclass
 
         # Look for tests in a module's contained objects.
         if inspect.ismodule(obj) and self._recurse:
@@ -259,7 +253,7 @@ class DocTestCase(doctests.DocTestCase):
             # Save our current directory and switch out to the one where the
             # test was originally created, in case another doctest did a
             # directory change.  We'll restore this in the finally clause.
-            curdir = getcwd()
+            curdir = os.getcwd()
             #print 'runTest in dir:', self._ori_dir  # dbg
             os.chdir(self._ori_dir)
 
@@ -580,15 +574,17 @@ class IPDocTestRunner(doctest.DocTestRunner,object):
         # so that it can propagate user variables loaded by %run into
         # test.globs.  We put them here into our modified %run as a function
         # attribute.  Our new %run will then only make the namespace update
-        # when called (rather than unconconditionally updating test.globs here
+        # when called (rather than unconditionally updating test.globs here
         # for all examples, most of which won't be calling %run anyway).
         #_ip._ipdoctest_test_globs = test.globs
         #_ip._ipdoctest_test_filename = test.filename
 
         test.globs.update(_ip.user_ns)
 
-        return super(IPDocTestRunner,self).run(test,
-                                               compileflags,out,clear_globs)
+        # Override terminal size to standardise traceback format
+        with modified_env({'COLUMNS': '80', 'LINES': '24'}):
+            return super(IPDocTestRunner,self).run(test,
+                                                   compileflags,out,clear_globs)
 
 
 class DocFileCase(doctest.DocFileCase):
@@ -645,7 +641,7 @@ class ExtensionDoctest(doctests.Doctest):
         modname = os.path.splitext(mod)[0]
         try:
             sys.path.append(bpath)
-            module = __import__(modname)
+            module = import_module(modname)
             tests = list(self.loadTestsFromModule(module))
         finally:
             sys.path.pop()
@@ -692,11 +688,8 @@ class ExtensionDoctest(doctests.Doctest):
         else:
             if self.extension and anyp(filename.endswith, self.extension):
                 name = os.path.basename(filename)
-                dh = open(filename)
-                try:
+                with open(filename) as dh:
                     doc = dh.read()
-                finally:
-                    dh.close()
                 test = self.parser.get_doctest(
                     doc, globs={'__file__': filename}, name=name,
                     filename=filename, lineno=0)

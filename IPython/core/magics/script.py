@@ -1,28 +1,16 @@
 """Magic functions for running cells in various scripts."""
-from __future__ import print_function
-#-----------------------------------------------------------------------------
-#  Copyright (c) 2012 The IPython Development Team.
-#
-#  Distributed under the terms of the Modified BSD License.
-#
-#  The full license is in the file COPYING.txt, distributed with this software.
-#-----------------------------------------------------------------------------
 
-#-----------------------------------------------------------------------------
-# Imports
-#-----------------------------------------------------------------------------
+# Copyright (c) IPython Development Team.
+# Distributed under the terms of the Modified BSD License.
 
-# Stdlib
 import errno
 import os
 import sys
 import signal
 import time
-from subprocess import Popen, PIPE
+from subprocess import Popen, PIPE, CalledProcessError
 import atexit
 
-# Our own packages
-from traitlets.config.configurable import Configurable
 from IPython.core import magic_arguments
 from IPython.core.magic import  (
     Magics, magics_class, line_magic, cell_magic
@@ -30,7 +18,7 @@ from IPython.core.magic import  (
 from IPython.lib.backgroundjobs import BackgroundJobManager
 from IPython.utils import py3compat
 from IPython.utils.process import arg_split
-from traitlets import List, Dict
+from traitlets import List, Dict, default
 
 #-----------------------------------------------------------------------------
 # Magic implementation classes
@@ -43,14 +31,14 @@ def script_args(f):
             '--out', type=str,
             help="""The variable in which to store stdout from the script.
             If the script is backgrounded, this will be the stdout *pipe*,
-            instead of the stderr text itself.
+            instead of the stderr text itself and will not be auto closed.
             """
         ),
         magic_arguments.argument(
             '--err', type=str,
             help="""The variable in which to store stderr from the script.
             If the script is backgrounded, this will be the stderr *pipe*,
-            instead of the stderr text itself.
+            instead of the stderr text itself and will not be autoclosed.
             """
         ),
         magic_arguments.argument(
@@ -66,6 +54,12 @@ def script_args(f):
             This is used only when --bg option is given.
             """
         ),
+        magic_arguments.argument(
+            '--no-raise-error', action="store_false", dest='raise_error',
+            help="""Whether you should raise an error message in addition to 
+            a stream on stderr if you get a nonzero exit code.
+            """
+        )
     ]
     for arg in args:
         f = arg(f)
@@ -79,7 +73,7 @@ class ScriptMagics(Magics):
     with a program in a subprocess, and registers a few top-level
     magics that call %%script with common interpreters.
     """
-    script_magics = List(config=True,
+    script_magics = List(
         help="""Extra script cell magics to define
         
         This generates simple wrappers of `%%script foo` as `%%foo`.
@@ -87,7 +81,8 @@ class ScriptMagics(Magics):
         If you want to add script magics that aren't on your path,
         specify them in script_paths
         """,
-    )
+    ).tag(config=True)
+    @default('script_magics')
     def _script_magics_default(self):
         """default to a common list of programs"""
         
@@ -108,13 +103,13 @@ class ScriptMagics(Magics):
         
         return defaults
     
-    script_paths = Dict(config=True,
+    script_paths = Dict(
         help="""Dict mapping short 'ruby' names to full paths, such as '/opt/secret/bin/ruby'
         
         Only necessary for items in script_magics where the default path will not
         find the right interpreter.
         """
-    )
+    ).tag(config=True)
     
     def __init__(self, shell=None):
         super(ScriptMagics, self).__init__(shell=shell)
@@ -198,11 +193,16 @@ class ScriptMagics(Magics):
         if args.bg:
             self.bg_processes.append(p)
             self._gc_bg_processes()
+            to_close = []
             if args.out:
                 self.shell.user_ns[args.out] = p.stdout
+            else:
+                to_close.append(p.stdout)
             if args.err:
                 self.shell.user_ns[args.err] = p.stderr
-            self.job_manager.new(self._run_script, p, cell, daemon=True)
+            else:
+                to_close.append(p.stderr)
+            self.job_manager.new(self._run_script, p, cell, to_close, daemon=True)
             if args.proc:
                 self.shell.user_ns[args.proc] = p
             return
@@ -229,8 +229,8 @@ class ScriptMagics(Magics):
                 print("Error while terminating subprocess (pid=%i): %s" \
                     % (p.pid, e))
             return
-        out = py3compat.bytes_to_str(out)
-        err = py3compat.bytes_to_str(err)
+        out = py3compat.decode(out)
+        err = py3compat.decode(err)
         if args.out:
             self.shell.user_ns[args.out] = out
         else:
@@ -241,11 +241,15 @@ class ScriptMagics(Magics):
         else:
             sys.stderr.write(err)
             sys.stderr.flush()
+        if args.raise_error and p.returncode!=0:
+            raise CalledProcessError(p.returncode, cell, output=out, stderr=err)
     
-    def _run_script(self, p, cell):
+    def _run_script(self, p, cell, to_close):
         """callback for running the script in the background"""
         p.stdin.write(cell)
         p.stdin.close()
+        for s in to_close:
+            s.close()
         p.wait()
 
     @line_magic("killbgscripts")
@@ -256,6 +260,8 @@ class ScriptMagics(Magics):
 
     def kill_bg_processes(self):
         """Kill all BG processes which are still running."""
+        if not self.bg_processes:
+            return
         for p in self.bg_processes:
             if p.poll() is None:
                 try:
@@ -263,6 +269,9 @@ class ScriptMagics(Magics):
                 except:
                     pass
         time.sleep(0.1)
+        self._gc_bg_processes()
+        if not self.bg_processes:
+            return
         for p in self.bg_processes:
             if p.poll() is None:
                 try:
@@ -270,6 +279,9 @@ class ScriptMagics(Magics):
                 except:
                     pass
         time.sleep(0.1)
+        self._gc_bg_processes()
+        if not self.bg_processes:
+            return
         for p in self.bg_processes:
             if p.poll() is None:
                 try:

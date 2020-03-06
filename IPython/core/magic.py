@@ -1,7 +1,6 @@
 # encoding: utf-8
 """Magic functions for InteractiveShell.
 """
-from __future__ import print_function
 
 #-----------------------------------------------------------------------------
 #  Copyright (C) 2001 Janko Hauser <jhauser@zscout.de> and
@@ -12,28 +11,21 @@ from __future__ import print_function
 #  the file COPYING, distributed as part of this software.
 #-----------------------------------------------------------------------------
 
-#-----------------------------------------------------------------------------
-# Imports
-#-----------------------------------------------------------------------------
-# Stdlib
 import os
 import re
 import sys
-import types
 from getopt import getopt, GetoptError
 
-# Our own
 from traitlets.config.configurable import Configurable
-from IPython.core import oinspect
-from IPython.core.error import UsageError
-from IPython.core.inputsplitter import ESC_MAGIC, ESC_MAGIC2
+from . import oinspect
+from .error import UsageError
+from .inputtransformer2 import ESC_MAGIC, ESC_MAGIC2
 from decorator import decorator
-from IPython.utils.ipstruct import Struct
-from IPython.utils.process import arg_split
-from IPython.utils.py3compat import string_types, iteritems
-from IPython.utils.text import dedent
-from traitlets import Bool, Dict, Instance
-from IPython.utils.warn import error
+from ..utils.ipstruct import Struct
+from ..utils.process import arg_split
+from ..utils.text import dedent
+from traitlets import Bool, Dict, Instance, observe
+from logging import error
 
 #-----------------------------------------------------------------------------
 # Globals
@@ -174,6 +166,8 @@ resulting magic::
     def foo(...)
 
 will create a {1} magic named `bar`.
+
+To register a class magic use ``Interactiveshell.register_magic(class or instance)``.
 """
 
 # These two are decorator factories.  While they are conceptually very similar,
@@ -198,7 +192,7 @@ def _method_magic_marker(magic_kind):
             name = func.__name__
             retval = decorator(call, func)
             record_magic(magics, magic_kind, name, name)
-        elif isinstance(arg, string_types):
+        elif isinstance(arg, str):
             # Decorator called with arguments (@foo('bar'))
             name = arg
             def mark(func, *a, **kw):
@@ -243,7 +237,7 @@ def _function_magic_marker(magic_kind):
             name = func.__name__
             ip.register_magic_function(func, magic_kind, name)
             retval = decorator(call, func)
-        elif isinstance(arg, string_types):
+        elif isinstance(arg, str):
             # Decorator called with arguments (@foo('bar'))
             name = arg
             def mark(func, *a, **kw):
@@ -269,6 +263,25 @@ def _function_magic_marker(magic_kind):
     
     magic_deco.__doc__ = ds
     return magic_deco
+
+
+MAGIC_NO_VAR_EXPAND_ATTR = '_ipython_magic_no_var_expand'
+
+
+def no_var_expand(magic_func):
+    """Mark a magic function as not needing variable expansion
+
+    By default, IPython interprets `{a}` or `$a` in the line passed to magics
+    as variables that should be interpolated from the interactive namespace
+    before passing the line to the magic function.
+    This is not always desirable, e.g. when the magic executes Python code
+    (%timeit, %time, etc.).
+    Decorate magics with `@no_var_expand` to opt-out of variable expansion.
+
+    .. versionadded:: 7.3
+    """
+    setattr(magic_func, MAGIC_NO_VAR_EXPAND_ATTR, True)
+    return magic_func
 
 
 # Create the actual decorators for public use
@@ -303,11 +316,12 @@ class MagicsManager(Configurable):
 
     shell = Instance('IPython.core.interactiveshell.InteractiveShellABC', allow_none=True)
 
-    auto_magic = Bool(True, config=True, help=
-        "Automatically call line magics without requiring explicit % prefix")
-
-    def _auto_magic_changed(self, name, value):
-        self.shell.automagic = value
+    auto_magic = Bool(True, help=
+        "Automatically call line magics without requiring explicit % prefix"
+    ).tag(config=True)
+    @observe('auto_magic')
+    def _auto_magic_changed(self, change):
+        self.shell.automagic = change['new']
     
     _auto_status = [
         'Automagic is OFF, % prefix IS needed for line magics.',
@@ -349,7 +363,7 @@ class MagicsManager(Configurable):
         docs = {}
         for m_type in self.magics:
             m_docs = {}
-            for m_name, m_func in iteritems(self.magics[m_type]):
+            for m_name, m_func in self.magics[m_type].items():
                 if m_func.__doc__:
                     if brief:
                         m_docs[m_name] = m_func.__doc__.split('\n', 1)[0]
@@ -430,26 +444,7 @@ class MagicsManager(Configurable):
         setattr(self.user_magics, magic_name, func)
         record_magic(self.magics, magic_kind, magic_name, func)
 
-    def define_magic(self, name, func):
-        """[Deprecated] Expose own function as magic function for IPython.
-
-        Will be removed in IPython 5.0
-
-        Example::
-
-            def foo_impl(self, parameter_s=''):
-                'My very own magic!. (Use docstrings, IPython reads them).'
-                print 'Magic function. Passed parameter is between < >:'
-                print '<%s>' % parameter_s
-                print 'The self object is:', self
-
-            ip.define_magic('foo',foo_impl)
-        """
-        meth = types.MethodType(func, self.user_magics)
-        setattr(self.user_magics, name, meth)
-        record_magic(self.magics, 'line', name, meth)
-
-    def register_alias(self, alias_name, magic_name, magic_kind='line'):
+    def register_alias(self, alias_name, magic_name, magic_kind='line', magic_params=None):
         """Register an alias to a magic function.
 
         The alias is an instance of :class:`MagicAlias`, which holds the
@@ -475,7 +470,7 @@ class MagicsManager(Configurable):
             raise ValueError('magic_kind must be one of %s, %s given' %
                              magic_kinds, magic_kind)
 
-        alias = MagicAlias(self.shell, magic_name, magic_kind)
+        alias = MagicAlias(self.shell, magic_name, magic_kind, magic_params)
         setattr(self.user_magics, alias_name, alias)
         record_magic(self.magics, magic_kind, alias_name, alias)
 
@@ -520,7 +515,6 @@ class Magics(Configurable):
                 shell.configurables.append(self)
             if hasattr(shell, 'config'):
                 kwargs.setdefault('parent', shell)
-            kwargs['shell'] = shell
 
         self.shell = shell
         self.options_table = {}
@@ -535,8 +529,8 @@ class Magics(Configurable):
         for mtype in magic_kinds:
             tab = self.magics[mtype] = {}
             cls_tab = class_magics[mtype]
-            for magic_name, meth_name in iteritems(cls_tab):
-                if isinstance(meth_name, string_types):
+            for magic_name, meth_name in cls_tab.items():
+                if isinstance(meth_name, str):
                     # it's a method name, grab it
                     tab[magic_name] = getattr(self, meth_name)
                 else:
@@ -677,9 +671,10 @@ class MagicAlias(object):
     Use the :meth:`MagicsManager.register_alias` method or the
     `%alias_magic` magic function to create and register a new alias.
     """
-    def __init__(self, shell, magic_name, magic_kind):
+    def __init__(self, shell, magic_name, magic_kind, magic_params=None):
         self.shell = shell
         self.magic_name = magic_name
+        self.magic_params = magic_params
         self.magic_kind = magic_kind
 
         self.pretty_target = '%s%s' % (magic_escapes[self.magic_kind], self.magic_name)
@@ -699,6 +694,10 @@ class MagicAlias(object):
                              "magic aliases cannot call themselves.")
         self._in_call = True
         try:
+            if self.magic_params:
+                args_list = list(args)
+                args_list[0] = self.magic_params + " " + args[0]
+                args = tuple(args_list)
             return fn(*args, **kwargs)
         finally:
             self._in_call = False

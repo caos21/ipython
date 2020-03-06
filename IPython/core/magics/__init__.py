@@ -14,10 +14,9 @@
 
 from ..magic import Magics, magics_class
 from .auto import AutoMagics
-from .basic import BasicMagics
+from .basic import BasicMagics, AsyncMagics
 from .code import CodeMagics, MacroToEdit
 from .config import ConfigMagics
-from .deprecated import DeprecatedMagics
 from .display import DisplayMagics
 from .execution import ExecutionMagics
 from .extension import ExtensionMagics
@@ -25,6 +24,7 @@ from .history import HistoryMagics
 from .logging import LoggingMagics
 from .namespace import NamespaceMagics
 from .osm import OSMagics
+from .packaging import PackagingMagics
 from .pylab import PylabMagics
 from .script import ScriptMagics
 

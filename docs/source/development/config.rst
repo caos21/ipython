@@ -34,26 +34,37 @@ location if there isn't already a directory there.
 
 Once the location of the IPython directory has been determined, you need to know
 which profile you are using. For users with a single configuration, this will
-simply be 'default', and will be located in 
+simply be 'default', and will be located in
 :file:`<IPYTHONDIR>/profile_default`.
 
 The next thing you need to know is what to call your configuration file. The
 basic idea is that each application has its own default configuration filename.
 The default named used by the :command:`ipython` command line program is
 :file:`ipython_config.py`, and *all* IPython applications will use this file.
-Other applications, such as the parallel :command:`ipcluster` scripts or the
-QtConsole will load their own config files *after* :file:`ipython_config.py`. To
-load a particular configuration file instead of the default, the name can be
-overridden by the ``config_file`` command line flag.
+The IPython kernel will load its own config file *after*
+:file:`ipython_config.py`. To load a particular configuration file instead of
+the default, the name can be overridden by the ``config_file`` command line
+flag.
 
 To generate the default configuration files, do::
 
     $ ipython profile create
 
 and you will have a default :file:`ipython_config.py` in your IPython directory
-under :file:`profile_default`. If you want the default config files for the
-:mod:`IPython.parallel` applications, add ``--parallel`` to the end of the
-command-line args.
+under :file:`profile_default`.
+
+.. note::
+
+    IPython configuration options are case sensitive, and IPython cannot
+    catch misnamed keys or invalid values.
+    
+    By default IPython will also ignore any invalid configuration files. 
+
+.. versionadded:: 5.0
+
+    IPython can be configured to abort in case of invalid configuration file.
+    To do so set the environment variable ``IPYTHON_SUPPRESS_CONFIG_ERRORS`` to
+    `'1'` or `'true'`
 
 
 Locating these files

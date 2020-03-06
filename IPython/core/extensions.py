@@ -5,18 +5,15 @@
 # Distributed under the terms of the Modified BSD License.
 
 import os
-from shutil import copyfile
+import os.path
 import sys
+from importlib import import_module, reload
 
 from traitlets.config.configurable import Configurable
-from IPython.utils.path import ensure_dir_exists
+from IPython.utils.path import ensure_dir_exists, compress_user
+from IPython.utils.decorators import undoc
 from traitlets import Instance
 
-try:
-    from importlib import reload
-except ImportError :
-    ## deprecated since 3.4
-    from imp import reload
 
 #-----------------------------------------------------------------------------
 # Main class
@@ -49,13 +46,12 @@ class ExtensionManager(Configurable):
     is added to ``sys.path`` automatically.
     """
 
-    shell = Instance('IPython.core.interactiveshell.InteractiveShellABC',
-                     allow_none=True)
+    shell = Instance('IPython.core.interactiveshell.InteractiveShellABC', allow_none=True)
 
     def __init__(self, shell=None, **kwargs):
         super(ExtensionManager, self).__init__(shell=shell, **kwargs)
-        self.shell.on_trait_change(
-            self._on_ipython_dir_changed, 'ipython_dir'
+        self.shell.observe(
+            self._on_ipython_dir_changed, names=('ipython_dir',)
         )
         self.loaded = set()
 
@@ -63,7 +59,7 @@ class ExtensionManager(Configurable):
     def ipython_extension_dir(self):
         return os.path.join(self.shell.ipython_dir, u'extensions')
 
-    def _on_ipython_dir_changed(self):
+    def _on_ipython_dir_changed(self, change):
         ensure_dir_exists(self.ipython_extension_dir)
 
     def load_extension(self, module_str):
@@ -75,13 +71,18 @@ class ExtensionManager(Configurable):
         """
         if module_str in self.loaded:
             return "already loaded"
-        
+
         from IPython.utils.syspathcontext import prepended_to_syspath
-        
+
         with self.shell.builtin_trap:
             if module_str not in sys.modules:
                 with prepended_to_syspath(self.ipython_extension_dir):
-                    __import__(module_str)
+                    mod = import_module(module_str)
+                    if mod.__file__.startswith(self.ipython_extension_dir):
+                        print(("Loading extensions from {dir} is deprecated. "
+                               "We recommend managing extensions like any "
+                               "other Python packages, in site-packages.").format(
+                              dir=compress_user(self.ipython_extension_dir)))
             mod = sys.modules[module_str]
             if self._call_load_ipython_extension(mod):
                 self.loaded.add(module_str)
@@ -138,37 +139,12 @@ class ExtensionManager(Configurable):
             mod.unload_ipython_extension(self.shell)
             return True
 
+    @undoc
     def install_extension(self, url, filename=None):
-        """Download and install an IPython extension. 
-
-        If filename is given, the file will be so named (inside the extension
-        directory). Otherwise, the name from the URL will be used. The file must
-        have a .py or .zip extension; otherwise, a ValueError will be raised.
-
-        Returns the full path to the installed file.
+        """
+        Deprecated.
         """
         # Ensure the extension directory exists
-        ensure_dir_exists(self.ipython_extension_dir)
-
-        if os.path.isfile(url):
-            src_filename = os.path.basename(url)
-            copy = copyfile
-        else:
-            # Deferred imports
-            try:
-                from urllib.parse import urlparse  # Py3
-                from urllib.request import urlretrieve
-            except ImportError:
-                from urlparse import urlparse
-                from urllib import urlretrieve
-            src_filename = urlparse(url).path.split('/')[-1]
-            copy = urlretrieve
-
-        if filename is None:
-            filename = src_filename
-        if os.path.splitext(filename)[1] not in ('.py', '.zip'):
-            raise ValueError("The file must have a .py or .zip extension", filename)
-
-        filename = os.path.join(self.ipython_extension_dir, filename)
-        copy(url, filename)
-        return filename
+        raise DeprecationWarning(
+            '`install_extension` and the `install_ext` magic have been deprecated since IPython 4.0'
+            'Use pip or other package managers to manage ipython extensions.')

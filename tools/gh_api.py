@@ -1,5 +1,4 @@
 """Functions for Github API requests."""
-from __future__ import print_function
 
 try:
     input = raw_input
@@ -17,13 +16,14 @@ import json
 try:
     import requests_cache
 except ImportError:
-    print("no cache", file=sys.stderr)
+    print("cache not available, install `requests_cache` for caching.", file=sys.stderr)
 else:
     requests_cache.install_cache("gh_api", expire_after=3600)
 
 # Keyring stores passwords by a 'username', but we're not storing a username and
 # password
-fake_username = 'ipython_tools'
+import socket
+fake_username = 'ipython_tools_%s' % socket.gethostname().replace('.','_').replace('-','_')
 
 class Obj(dict):
     """Dictionary with attribute access to names."""
@@ -49,21 +49,30 @@ def get_auth_token():
         return token
 
     print("Please enter your github username and password. These are not "
-           "stored, only used to get an oAuth token. You can revoke this at "
-           "any time on Github.")
-    user = input("Username: ")
-    pw = getpass.getpass("Password: ")
+          "stored, only used to get an oAuth token. You can revoke this at "
+          "any time on Github.\n"
+          "Username: ", file=sys.stderr, end='')
+    user = input('')
+    pw = getpass.getpass("Password: ", stream=sys.stderr)
 
     auth_request = {
       "scopes": [
         "public_repo",
         "gist"
       ],
-      "note": "IPython tools",
+      "note": "IPython tools %s" % socket.gethostname(),
       "note_url": "https://github.com/ipython/ipython/tree/master/tools",
     }
     response = requests.post('https://api.github.com/authorizations',
                             auth=(user, pw), data=json.dumps(auth_request))
+    if response.status_code == 401 and \
+            'required;' in response.headers.get('X-GitHub-OTP', ''):
+        print("Your login API requested a one time password", file=sys.stderr)
+        otp = getpass.getpass("One Time Password: ", stream=sys.stderr)
+        response = requests.post('https://api.github.com/authorizations',
+                            auth=(user, pw), 
+                            data=json.dumps(auth_request),
+                            headers={'X-GitHub-OTP':otp})
     response.raise_for_status()
     token = json.loads(response.text)['token']
     keyring.set_password('github', fake_username, token)

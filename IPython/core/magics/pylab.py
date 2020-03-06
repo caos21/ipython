@@ -1,6 +1,5 @@
 """Implementation of magic functions for matplotlib/pylab support.
 """
-from __future__ import print_function
 #-----------------------------------------------------------------------------
 #  Copyright (c) 2012 The IPython Development Team.
 #
@@ -18,7 +17,7 @@ from traitlets.config.application import Application
 from IPython.core import magic_arguments
 from IPython.core.magic import Magics, magics_class, line_magic
 from IPython.testing.skipdoctest import skip_doctest
-from IPython.utils.warn import warn
+from warnings import warn
 from IPython.core.pylabtools import backends
 
 #-----------------------------------------------------------------------------
@@ -38,7 +37,7 @@ magic_gui_arg = magic_arguments.argument(
 @magics_class
 class PylabMagics(Magics):
     """Magics related to matplotlib's pylab support"""
-    
+
     @skip_doctest
     @line_magic
     @magic_arguments.magic_arguments()
@@ -47,23 +46,23 @@ class PylabMagics(Magics):
     @magic_gui_arg
     def matplotlib(self, line=''):
         """Set up matplotlib to work interactively.
-        
+
         This function lets you activate matplotlib interactive support
         at any point during an IPython session. It does not import anything
         into the interactive namespace.
-        
+
         If you are using the inline matplotlib backend in the IPython Notebook
         you can set which figure formats are enabled using the following::
-        
+
             In [1]: from IPython.display import set_matplotlib_formats
-            
+
             In [2]: set_matplotlib_formats('pdf', 'svg')
 
         The default for inline figures sets `bbox_inches` to 'tight'. This can
         cause discrepancies between the displayed image and the identical
         image created using `savefig`. This behavior can be disabled using the
         `%config` magic::
-            
+
             In [3]: %config InlineBackend.print_figure_kwargs = {'bbox_inches':None}
 
         In addition, see the docstring of
@@ -74,7 +73,7 @@ class PylabMagics(Magics):
         Examples
         --------
         To enable the inline backend for usage with the IPython Notebook::
-        
+
             In [1]: %matplotlib inline
 
         In this case, where the matplotlib default is TkAgg::
@@ -97,7 +96,7 @@ class PylabMagics(Magics):
             backends_list = list(backends.keys())
             print("Available matplotlib backends: %s" % backends_list)
         else:
-            gui, backend = self.shell.enable_matplotlib(args.gui)
+            gui, backend = self.shell.enable_matplotlib(args.gui.lower() if isinstance(args.gui, str) else args.gui)
             self._show_matplotlib_backend(args.gui, backend)
 
     @skip_doctest
@@ -106,7 +105,7 @@ class PylabMagics(Magics):
     @magic_arguments.argument(
         '--no-import-all', action='store_true', default=None,
         help="""Prevent IPython from performing ``import *`` into the interactive namespace.
-        
+
         You can govern the default behavior of this flag with the
         InteractiveShellApp.pylab_import_all configurable.
         """
@@ -117,23 +116,23 @@ class PylabMagics(Magics):
 
         This function lets you activate pylab (matplotlib, numpy and
         interactive support) at any point during an IPython session.
-        
+
         %pylab makes the following imports::
-        
+
             import numpy
             import matplotlib
             from matplotlib import pylab, mlab, pyplot
             np = numpy
             plt = pyplot
-            
+
             from IPython.display import display
             from IPython.core.pylabtools import figsize, getfigs
-            
+
             from pylab import *
             from numpy import *
 
         If you pass `--no-import-all`, the last two `*` imports will be excluded.
-        
+
         See the %matplotlib magic for more details about activating matplotlib
         without affecting the interactive namespace.
         """
@@ -160,7 +159,7 @@ class PylabMagics(Magics):
             warn("pylab import has clobbered these variables: %s"  % clobbered +
             "\n`%matplotlib` prevents importing * from pylab and numpy"
             )
-    
+
     def _show_matplotlib_backend(self, gui, backend):
         """show matplotlib message backend message"""
         if not gui or gui == 'auto':

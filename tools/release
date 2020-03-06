@@ -1,11 +1,17 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 """IPython release script.
 
 This should ONLY be run at real release time.
 """
 from __future__ import print_function
 
-from toollib import *
+import os
+from glob import glob
+from subprocess import call
+import sys
+
+from toollib import (get_ipdir, pjoin, cd, execfile, sh, archive,
+        sdists, archive_user, archive_dir, buildwheels)
 from gh_api import post_download
 
 # Get main ipython dir, this will raise if it doesn't pass some checks
@@ -22,6 +28,7 @@ if not os.path.exists(ipbackupdir):
 cd(ipdir)
 
 # Load release info
+version = None
 execfile(pjoin('IPython','core','release.py'), globals())
 
 # Build site addresses for file uploads
@@ -40,42 +47,50 @@ print()
 
 # Perform local backup, go to tools dir to run it.
 cd(tooldir)
-sh('./make_tarball.py')
-sh('mv ipython-*.tgz %s' % ipbackupdir)
 
-# Build release files
-sh('./build_release %s' % ipdir)
+if 'upload' in sys.argv:
+    cd(distdir)
 
-if 'upload' not in sys.argv:
-    print("`./release upload` to register and release")
+    # do not upload OS specific files like .DS_Store
+    to_upload = glob('*.whl')+glob('*.tar.gz')
+    for fname in to_upload:
+        # TODO: update to GitHub releases API
+        continue
+        print('uploading %s to GitHub' % fname)
+        desc = "IPython %s source distribution" % version
+        post_download("ipython/ipython", fname, description=desc)
+
+    # Make target dir if it doesn't exist
+    print('1. Uploading IPython to archive.ipython.org')
+    sh('ssh %s "mkdir -p %s/release/%s" ' % (archive_user, archive_dir, version))
+    sh('scp *.tar.gz *.whl %s' % release_site)
+
+    print('2. Uploading backup files...')
+    cd(ipbackupdir)
+    sh('scp `ls -1tr *tgz | tail -1` %s' % backup_site)
+
+    print('3. Uploading to PyPI using twine')
+    cd(distdir)
+    call(['twine', 'upload'] + to_upload)
+
+else:
+    # Build, but don't upload
+
+    # Make backup tarball
+    sh('./make_tarball.py')
+    sh('mv ipython-*.tgz %s' % ipbackupdir)
+
+    # Build release files
+    sh('./build_release %s' % ipdir)
+
+    cd(ipdir)
+
+    # Upload all files
+    sh(sdists)
+
+    buildwheels()
+    print("`./release upload` to upload source distribution on PyPI and ipython archive")
     sys.exit(0)
 
-# Register with the Python Package Index (PyPI)
-print( 'Registering with PyPI...')
-cd(ipdir)
-sh('./setup.py register')
 
-# Upload all files
-sh(sdists + ' upload')
-for py in ('2.7', '3.4'):
-    sh('python%s setupegg.py bdist_wheel upload' % py)
 
-cd(distdir)
-print( 'Uploading distribution files...')
-
-for fname in os.listdir('.'):
-    # TODO: update to GitHub releases API
-    continue
-    print('uploading %s to GitHub' % fname)
-    desc = "IPython %s source distribution" % version
-    post_download("ipython/ipython", fname, description=desc)
-
-# Make target dir if it doesn't exist
-sh('ssh %s "mkdir -p %s/release/%s" ' % (archive_user, archive_dir, version))
-sh('scp * %s' % release_site)
-
-print( 'Uploading backup files...')
-cd(ipbackupdir)
-sh('scp `ls -1tr *tgz | tail -1` %s' % backup_site)
-
-print('Done!')

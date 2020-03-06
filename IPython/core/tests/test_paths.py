@@ -4,11 +4,7 @@ import shutil
 import sys
 import tempfile
 import warnings
-
-try:                    # Python 3
-    from unittest.mock import patch
-except ImportError:     # Python 2
-    from mock import patch
+from unittest.mock import patch
 
 import nose.tools as nt
 from testpath import modified_env, assert_isdir, assert_isfile
@@ -17,13 +13,13 @@ from IPython import paths
 from IPython.testing.decorators import skip_win32
 from IPython.utils.tempdir import TemporaryDirectory
 
-TMP_TEST_DIR = tempfile.mkdtemp()
+TMP_TEST_DIR = os.path.realpath(tempfile.mkdtemp())
 HOME_TEST_DIR = os.path.join(TMP_TEST_DIR, "home_test_dir")
 XDG_TEST_DIR = os.path.join(HOME_TEST_DIR, "xdg_test_dir")
 XDG_CACHE_DIR = os.path.join(HOME_TEST_DIR, "xdg_cache_dir")
 IP_TEST_DIR = os.path.join(HOME_TEST_DIR,'.ipython')
 
-def setup():
+def setup_module():
     """Setup testenvironment for the module:
 
             - Adds dummy home dir tree
@@ -35,7 +31,7 @@ def setup():
     os.makedirs(os.path.join(XDG_CACHE_DIR, 'ipython'))
 
 
-def teardown():
+def teardown_module():
     """Teardown testenvironment for the module:
 
             - Remove dummy home dir tree

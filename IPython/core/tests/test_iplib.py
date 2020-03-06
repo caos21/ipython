@@ -8,14 +8,6 @@
 import nose.tools as nt
 
 # our own packages
-from IPython.testing.globalipapp import get_ipython
-
-#-----------------------------------------------------------------------------
-# Globals
-#-----------------------------------------------------------------------------
-
-# Get the public instance of IPython
-ip = get_ipython()
 
 #-----------------------------------------------------------------------------
 # Test functions
@@ -72,9 +64,9 @@ In [4]: run simpleerr.py
 ---------------------------------------------------------------------------
 ZeroDivisionError                         Traceback (most recent call last)
 <BLANKLINE>
-... in <module>()
+... in <module>
+     29     except IndexError:
      30         mode = 'div'
-     31 
 ---> 32     bar(mode)
 <BLANKLINE>
 ... in bar(mode)
@@ -88,8 +80,6 @@ ZeroDivisionError                         Traceback (most recent call last)
       6     x = 1
       7     y = 0
 ----> 8     x/y
-      9 
-     10 def sysexit(stat, mode):
 <BLANKLINE>
 ZeroDivisionError: ...
 """
@@ -104,18 +94,16 @@ In [6]: run simpleerr.py
 ---------------------------------------------------------------------------
 ZeroDivisionError                         Traceback (most recent call last)
 <BLANKLINE>
-... in <module>()
+... in <module>
+     29     except IndexError:
      30         mode = 'div'
-     31 
 ---> 32     bar(mode)
-        global bar = <function bar at ...>
-        global mode = 'div'
+        mode = 'div'
 <BLANKLINE>
 ... in bar(mode='div')
      14     "bar"
      15     if mode=='div':
 ---> 16         div0()
-        global div0 = <function div0 at ...>
      17     elif mode=='exit':
      18         try:
 <BLANKLINE>
@@ -125,8 +113,6 @@ ZeroDivisionError                         Traceback (most recent call last)
 ----> 8     x/y
         x = 1
         y = 0
-      9 
-     10 def sysexit(stat, mode):
 <BLANKLINE>
 ZeroDivisionError: ...
       """
@@ -161,9 +147,9 @@ In [22]: %tb
 ---------------------------------------------------------------------------
 SystemExit                                Traceback (most recent call last)
 <BLANKLINE>
-...<module>()
+...<module>
+     29     except IndexError:
      30         mode = 'div'
-     31 
 ---> 32     bar(mode)
 <BLANKLINE>
 ...bar(mode)
@@ -174,11 +160,8 @@ SystemExit                                Traceback (most recent call last)
      24         raise ValueError('Unknown mode')
 <BLANKLINE>
 ...sysexit(stat, mode)
-      9 
      10 def sysexit(stat, mode):
 ---> 11     raise SystemExit(stat, 'Mode = %s' % mode)
-     12 
-     13 def bar(mode):
 <BLANKLINE>
 SystemExit: (2, 'Mode = exit')
 
@@ -189,32 +172,26 @@ In [24]: %tb
 ---------------------------------------------------------------------------
 SystemExit                                Traceback (most recent call last)
 <BLANKLINE>
-... in <module>()
+... in <module>
+     29     except IndexError:
      30         mode = 'div'
-     31 
 ---> 32     bar(mode)
-        global bar = <function bar at ...>
-        global mode = 'exit'
+        mode = 'exit'
 <BLANKLINE>
 ... in bar(mode='exit')
      20         except:
      21             stat = 1
 ---> 22         sysexit(stat, mode)
-        global sysexit = <function sysexit at ...>
-        stat = 2
         mode = 'exit'
+        stat = 2
      23     else:
      24         raise ValueError('Unknown mode')
 <BLANKLINE>
 ... in sysexit(stat=2, mode='exit')
-      9 
      10 def sysexit(stat, mode):
 ---> 11     raise SystemExit(stat, 'Mode = %s' % mode)
-        global SystemExit = undefined
         stat = 2
         mode = 'exit'
-     12 
-     13 def bar(mode):
 <BLANKLINE>
 SystemExit: (2, 'Mode = exit')
     """

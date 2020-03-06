@@ -9,10 +9,9 @@ import shutil
 import errno
 
 from traitlets.config.configurable import LoggingConfigurable
-from IPython.paths import get_ipython_package_dir
-from IPython.utils.path import expand_path, ensure_dir_exists
-from IPython.utils import py3compat
-from traitlets import Unicode, Bool
+from ..paths import get_ipython_package_dir
+from ..utils.path import expand_path, ensure_dir_exists
+from traitlets import Unicode, Bool, observe
 
 #-----------------------------------------------------------------------------
 # Module errors
@@ -47,17 +46,18 @@ class ProfileDir(LoggingConfigurable):
     pid_dir = Unicode(u'')
     static_dir = Unicode(u'')
 
-    location = Unicode(u'', config=True,
+    location = Unicode(u'',
         help="""Set the profile location directly. This overrides the logic used by the
         `profile` option.""",
-        )
+        ).tag(config=True)
 
     _location_isset = Bool(False) # flag for detecting multiply set location
-
-    def _location_changed(self, name, old, new):
+    @observe('location')
+    def _location_changed(self, change):
         if self._location_isset:
             raise RuntimeError("Cannot set profile location more than once.")
         self._location_isset = True
+        new = change['new']
         ensure_dir_exists(new)
 
         # ensure config files exist:
@@ -67,10 +67,7 @@ class ProfileDir(LoggingConfigurable):
         self.pid_dir = os.path.join(new, self.pid_dir_name)
         self.static_dir = os.path.join(new, self.static_dir_name)
         self.check_dirs()
-
-    def _log_dir_changed(self, name, old, new):
-        self.check_log_dir()
-
+    
     def _mkdir(self, path, mode=None):
         """ensure a directory exists at a given path
 
@@ -104,39 +101,31 @@ class ProfileDir(LoggingConfigurable):
                 raise
 
         return True
-
-    def check_log_dir(self):
+    
+    @observe('log_dir')
+    def check_log_dir(self, change=None):
         self._mkdir(self.log_dir)
-
-    def _startup_dir_changed(self, name, old, new):
-        self.check_startup_dir()
-
-    def check_startup_dir(self):
+    
+    @observe('startup_dir')
+    def check_startup_dir(self, change=None):
         self._mkdir(self.startup_dir)
 
         readme = os.path.join(self.startup_dir, 'README')
         src = os.path.join(get_ipython_package_dir(), u'core', u'profile', u'README_STARTUP')
 
         if not os.path.exists(src):
-            self.log.warn("Could not copy README_STARTUP to startup dir. Source file %s does not exist.", src)
+            self.log.warning("Could not copy README_STARTUP to startup dir. Source file %s does not exist.", src)
 
         if os.path.exists(src) and not os.path.exists(readme):
             shutil.copy(src, readme)
 
-    def _security_dir_changed(self, name, old, new):
-        self.check_security_dir()
-
-    def check_security_dir(self):
+    @observe('security_dir')
+    def check_security_dir(self, change=None):
         self._mkdir(self.security_dir, 0o40700)
 
-    def _pid_dir_changed(self, name, old, new):
-        self.check_pid_dir()
-
-    def check_pid_dir(self):
+    @observe('pid_dir')
+    def check_pid_dir(self, change=None):
         self._mkdir(self.pid_dir, 0o40700)
-
-    def _static_dir_changed(self, name, old, new):
-        self.check_startup_dir()
 
     def check_dirs(self):
         self.check_security_dir()
@@ -197,7 +186,7 @@ class ProfileDir(LoggingConfigurable):
         is not found, a :class:`ProfileDirError` exception will be raised.
 
         The search path algorithm is:
-        1. ``py3compat.getcwd()``
+        1. ``os.getcwd()``
         2. ``ipython_dir``
 
         Parameters
@@ -209,7 +198,7 @@ class ProfileDir(LoggingConfigurable):
             will be "profile_<profile>".
         """
         dirname = u'profile_' + name
-        paths = [py3compat.getcwd(), ipython_dir]
+        paths = [os.getcwd(), ipython_dir]
         for p in paths:
             profile_dir = os.path.join(p, dirname)
             if os.path.isdir(profile_dir):

@@ -5,10 +5,15 @@
 Release 2.4
 ===========
 
-January, 2015
+January, 2014
+
+.. note::
+
+    Some of the patches marked for 2.4 were left out of 2.4.0.
+    Please use 2.4.1.
 
 - backport read support for nbformat v4 from IPython 3
-- support for PyQt5
+- support for PyQt5 in the kernel (not QtConsole)
 - support for Pygments 2.0
 
 For more information on what fixes have been backported to 2.4,
@@ -144,11 +149,11 @@ which can be started from the Help menu.
 Security
 ********
 
-2.0 introduces a :ref:`security model <notebook_security>` for notebooks,
+2.0 introduces a security model for notebooks,
 to prevent untrusted code from executing on users' behalf when notebooks open.
 A quick summary of the model:
 
-- Trust is determined by :ref:`signing notebooks<signing_notebooks>`.
+- Trust is determined by signing notebooks.
 - Untrusted HTML output is sanitized.
 - Untrusted Javascript is never executed.
 - HTML and Javascript in Markdown are never trusted.
@@ -336,7 +341,7 @@ Backwards incompatible changes
   Python versions are now 2.7 and 3.3.
 * The Transformer classes have been renamed to Preprocessor in nbconvert and
   their ``call`` methods have been renamed to ``preprocess``.
-* The ``call`` methods of nbconvert post-processsors have been renamed to
+* The ``call`` methods of nbconvert post-processors have been renamed to
   ``postprocess``.
 
 * The module ``IPython.core.fakemodule`` has been removed.

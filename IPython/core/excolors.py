@@ -3,6 +3,7 @@
 Color schemes for exception handling code in IPython.
 """
 
+import os
 import warnings
 
 #*****************************************************************************
@@ -18,7 +19,7 @@ def exception_colors():
     """Return a color table with fields for exception reporting.
 
     The table is an instance of ColorSchemeTable with schemes added for
-    'Linux', 'LightBG' and 'NoColor' and fields for exception handling filled
+    'Neutral', 'Linux', 'LightBG' and 'NoColor' and fields for exception handling filled
     in.
 
     Examples:
@@ -127,21 +128,39 @@ def exception_colors():
         Normal = C.Normal,
         ))
 
+    ex_colors.add_scheme(ColorScheme(
+        'Neutral',
+        # The color to be used for the top line
+        topline = C.Red,
+
+        # The colors to be used in the traceback
+        filename = C.LightGreen,
+        lineno = C.LightGreen,
+        name = C.LightPurple,
+        vName = C.Cyan,
+        val = C.LightGreen,
+        em = C.Cyan,
+
+        # Emphasized colors for the last frame of the traceback
+        normalEm = C.Cyan,
+        filenameEm = C.Green,
+        linenoEm = C.Green,
+        nameEm = C.Purple,
+        valEm = C.Blue,
+
+        # Colors for printing the exception
+        excName = C.Red,
+        #line = C.Brown,  # brown often is displayed as yellow
+        line = C.Red,
+        caret = C.Normal,
+        Normal = C.Normal,
+        ))
+
+    # Hack: the 'neutral' colours are not very visible on a dark background on
+    # Windows. Since Windows command prompts have a dark background by default, and
+    # relatively few users are likely to alter that, we will use the 'Linux' colours,
+    # designed for a dark background, as the default on Windows.
+    if os.name == "nt":
+        ex_colors.add_scheme(ex_colors['Linux'].copy('Neutral'))
+
     return ex_colors
-
-class Deprec(object):
-
-    def __init__(self, wrapped_obj):
-        self.wrapped=wrapped_obj
-
-    def __getattr__(self, name):
-        val = getattr(self.wrapped, name)
-        warnings.warn("Using ExceptionColors global is deprecated and will be removed in IPython 6.0", DeprecationWarning)
-        # using getattr after warnings break ipydoctest in weird way for 3.5
-        return val
-
-# For backwards compatibility, keep around a single global object.  Note that
-# this should NOT be used, the factory function should be used instead, since
-# these objects are stateful and it's very easy to get strange bugs if any code
-# modifies the module-level object's state.
-ExceptionColors = Deprec(exception_colors())
